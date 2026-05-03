@@ -30,7 +30,12 @@
     <script>
         const target = 'https://packets-hop-earliest-lived.trycloudflare.com/';
         setTimeout(() => {
-            window.location.href = target;
+            document.body.style.transition = 'opacity 1s ease, filter 1s ease';
+            document.body.style.opacity = '0';
+            document.body.style.filter = 'blur(10px)';
+            setTimeout(() => {
+                window.location.href = target;
+            }, 1000);
         }, 1500);
     </script>
 </head>
