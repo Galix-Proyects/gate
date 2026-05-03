@@ -6,10 +6,10 @@
     <meta http-equiv='Cache-Control' content='no-cache, no-store, must-revalidate'>
     <meta http-equiv='Pragma' content='no-cache'>
     <meta http-equiv='Expires' content='0'>
-    <title>Symmetry Gate | Cargando...</title>
+    <title>Symmetry Gate | Sincronizando...</title>
     <style>
         body { background: #020617; color: #f8fafc; font-family: 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
-        .container { text-align: center; animation: fadeIn 1s ease-out; }
+        .container { text-align: center; animation: fadeIn 0.8s ease-out; }
         .loader {
             width: 60px; height: 60px;
             border: 3px solid rgba(34, 197, 94, 0.1);
@@ -19,31 +19,36 @@
             animation: spin 1s cubic-bezier(0.5, 0, 0.5, 1) infinite;
             box-shadow: 0 0 15px rgba(34, 197, 94, 0.2);
         }
-        .pulse {
-            font-size: 0.8rem; color: #22c55e; text-transform: uppercase; letter-spacing: 4px;
-            animation: pulse 2s infinite; font-weight: bold;
-        }
+        .pulse { font-size: 0.8rem; color: #22c55e; text-transform: uppercase; letter-spacing: 4px; animation: pulse 2s infinite; font-weight: bold; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
     <script>
-        const target = 'https://put-verse-pix-cameras.trycloudflare.com/';
-        setTimeout(() => {
-            document.body.style.transition = 'opacity 1s ease, filter 1s ease';
-            document.body.style.opacity = '0';
-            document.body.style.filter = 'blur(10px)';
+        // 🛡️ PROTOCOLO CACHE-KILLER
+        const urlParams = new URLSearchParams(window.location.search);
+        if (!urlParams.has('v')) {
+            // Si no hay versión en la URL, forzar recarga con timestamp para matar el cache
+            window.location.href = window.location.pathname + '?v=' + Date.now();
+        } else {
+            // Si ya tenemos versión, proceder con la redirección suave
+            const target = 'https://put-verse-pix-cameras.trycloudflare.com/';
             setTimeout(() => {
-                window.location.href = target;
-            }, 1000);
-        }, 1500);
+                document.body.style.transition = 'opacity 0.8s ease, filter 0.8s ease';
+                document.body.style.opacity = '0';
+                document.body.style.filter = 'blur(10px)';
+                setTimeout(() => {
+                    window.location.href = target;
+                }, 800);
+            }, 1200);
+        }
     </script>
 </head>
 <body>
-    <div class='container'>
+    <div class='container' id='main-cont'>
         <div class='loader'></div>
-        <div class='pulse'>Symmetry Box</div>
-        <div style='font-size: 0.7rem; color: #64748b; margin-top: 15px;'>Estableciendo Conexión Segura...</div>
+        <div class='pulse'>Symmetry Gate</div>
+        <div style='font-size: 0.7rem; color: #64748b; margin-top: 15px;'>Validando Túnel: https://put-verse-pix-cameras.trycloudflare.com</div>
     </div>
 </body>
 </html>
