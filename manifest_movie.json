@@ -1,0 +1,17 @@
+{
+  "name": "GalixMovie Premium",
+  "short_name": "GalixMovie",
+  "description": "Tu servidor personal de streaming estilo Netflix",
+  "start_url": "./index.html?p=GalixMovie",
+  "display": "fullscreen",
+  "background_color": "#020617",
+  "theme_color": "#e11d48",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
