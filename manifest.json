@@ -1,0 +1,17 @@
+{
+  "name": "Galix Gateway",
+  "short_name": "Galix",
+  "description": "Portal de acceso inteligente al ecosistema Galix",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#e11d48",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
