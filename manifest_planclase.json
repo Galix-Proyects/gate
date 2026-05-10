@@ -1,0 +1,17 @@
+{
+  "name": "PlanClase Pro",
+  "short_name": "PlanClase",
+  "description": "Tu motor digital de planeación pedagógica",
+  "start_url": "./index.html?p=PlanClase",
+  "display": "fullscreen",
+  "background_color": "#020617",
+  "theme_color": "#10b981",
+  "icons": [
+    {
+      "src": "planclase_logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
