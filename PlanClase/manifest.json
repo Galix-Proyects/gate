@@ -1,0 +1,12 @@
+{
+      "name": "PlanClase AI",
+      "short_name": "PlanClase",
+      "start_url": "index.html",
+      "display": "standalone",
+      "background_color": "#020617",
+      "theme_color": "#3b82f6",
+      "icons": [
+        { "src": "../icons/PlanClase.png", "sizes": "192x192", "type": "image/png" },
+        { "src": "../icons/PlanClase.png", "sizes": "512x512", "type": "image/png" }
+      ]
+    }
