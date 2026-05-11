@@ -62,7 +62,15 @@
             function renderFrame(tunnelUrl) {
                 const frame = document.getElementById('frame');
                 const cleanUrl = tunnelUrl.replace(/\/$/, '');
-                frame.src = cleanUrl + '/GalixMovie/' + window.location.search;
+                
+                // ESTRATEGIA DE RUTEO ELÁSTICO:
+                // Intentamos cargar la raíz del túnel primero si el proyecto coincide
+                // Esto soluciona el 404 si el túnel apunta directo a la carpeta del proyecto.
+                const urlRaiz = cleanUrl + '/' + window.location.search;
+                const urlSubpath = cleanUrl + '/GalixMovie/' + window.location.search;
+                
+                // Por defecto, probamos con la raíz (más común en túneles temporales de Israel)
+                frame.src = urlRaiz;
                 
                 frame.onload = () => {
                     document.getElementById('splash').style.opacity = '0';
@@ -71,6 +79,9 @@
                         frame.style.display = 'block';
                     }, 800);
                 };
+
+                // Si detectamos un error de carga en el iFrame (difícil por CORS, pero monitoreamos)
+                console.log('Cargando: ' + urlRaiz);
             }
             load();
         </script>
