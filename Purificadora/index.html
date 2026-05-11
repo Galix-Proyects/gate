@@ -32,7 +32,9 @@
                 try {
                     const res = await fetch('../tunnel.json?t=' + Date.now());
                     const data = await res.json();
-                    const content = JSON.parse(atob(data.content));
+                    // Limpiamos saltos de línea del base64 de GitHub para evitar error de atob
+                    const b64 = data.content.replace(/\n/g, '').replace(/\s/g, '');
+                    const content = JSON.parse(atob(b64));
                     const frame = document.getElementById('frame');
                     
                     // LÓGICA DE RUTA INTELIGENTE:
