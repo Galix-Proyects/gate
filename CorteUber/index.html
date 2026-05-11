@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+    <html lang='es'>
+    <head>
+        <meta charset='utf-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'>
+        <title>CorteUber Pro</title>
+        <meta name='mobile-web-app-capable' content='yes'>
+        <meta name='apple-mobile-web-app-capable' content='yes'>
+        <meta name='apple-mobile-web-app-status-bar-style' content='black-translucent'>
+        <meta name='theme-color' content='#22c55e'>
+        <link rel='manifest' href='manifest.json'>
+        <link rel='apple-touch-icon' href='../icons/CorteUber.png'>
+        <link href='https://fonts.googleapis.com/css2?family=Outfit:wght@400;900&display=swap' rel='stylesheet'>
+        <style>
+            :root { --accent: #22c55e; --bg: #020617; }
+            body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: 'Outfit', sans-serif; }
+            #splash { position: fixed; inset: 0; z-index: 9999; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.8s; }
+            .loader { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.05); border-top: 3px solid var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 20px; }
+            @keyframes spin { to { transform: rotate(360deg); } }
+            .brand { font-size: 1.2rem; font-weight: 900; color: #fff; text-transform: uppercase; letter-spacing: 2px; }
+            iframe { width: 100%; height: 100%; border: none; display: none; }
+        </style>
+    </head>
+    <body>
+        <div id='splash'>
+            <div class='loader'></div>
+            <div class='brand'>CorteUber</div>
+        </div>
+        <iframe id='frame' allow='autoplay; camera; microphone; geolocation; encrypted-media; fullscreen; display-capture'></iframe>
+        <script>
+            async function load() {
+                try {
+                    const res = await fetch('../tunnel.json?t=' + Date.now());
+                    const data = await res.json();
+                    const content = JSON.parse(atob(data.content));
+                    const frame = document.getElementById('frame');
+                    // IMPORTANTE: Aquí decidimos si el túnel apunta a la raíz o al proyecto
+                    // Si el 404 persiste, cambiaremos esto a content.url directamente
+                    frame.src = content.url.replace(/\/$/, '') + '/CorteUber/' + window.location.search;
+                    frame.onload = () => {
+                        document.getElementById('splash').style.opacity = '0';
+                        setTimeout(() => {
+                            document.getElementById('splash').style.display = 'none';
+                            frame.style.display = 'block';
+                        }, 800);
+                    };
+                } catch(e) { console.error(e); }
+            }
+            load();
+        </script>
+    </body>
+    </html>
