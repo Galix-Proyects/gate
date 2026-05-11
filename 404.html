@@ -1,28 +1,45 @@
 <!DOCTYPE html>
-<html>
+<html lang='es'>
 <head>
     <meta charset='utf-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Symmetry Gate | Acceso Inteligente</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0, viewport-fit=cover'>
+    <title>Symmetry Gate | Acceso Maestro</title>
+    
+    <!-- PWA & Mobile Optimization -->
+    <meta name='mobile-web-app-capable' content='yes'>
+    <meta name='apple-mobile-web-app-capable' content='yes'>
+    <meta name='apple-mobile-web-app-status-bar-style' content='black-translucent'>
+    <meta name='theme-color' content='#020617'>
+    
+    <link href='https://fonts.googleapis.com/css2?family=Outfit:wght@400;900&display=swap' rel='stylesheet'>
+    
     <style>
-        body { background: #020617; color: #f8fafc; font-family: 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
-        .container { text-align: center; }
-        .loader {
-            width: 50px; height: 50px;
-            border: 3px solid rgba(34, 197, 94, 0.1);
-            border-top: 3px solid #22c55e;
+        :root { --accent: #22c55e; --bg: #020617; }
+        body { background: var(--bg); color: #fff; font-family: 'Outfit', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        .container { text-align: center; animation: fadeIn 1s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        
+        .loader-netflix {
+            width: 80px; height: 80px;
+            border: 4px solid rgba(255,255,255,0.05);
+            border-top: 4px solid var(--accent);
             border-radius: 50%;
-            margin: 0 auto 20px;
-            animation: spin 0.8s linear infinite;
+            margin: 0 auto 30px;
+            animation: spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.2);
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .status { font-size: 0.8rem; color: #22c55e; letter-spacing: 2px; font-weight: bold; }
+        
+        .status { font-size: 0.7rem; color: var(--accent); letter-spacing: 4px; font-weight: 900; text-transform: uppercase; opacity: 0.8; }
+        .brand { font-size: 1.8rem; font-weight: 900; margin-bottom: 10px; letter-spacing: -1px; }
+        .brand span { color: var(--accent); }
     </style>
 </head>
 <body>
     <div class='container'>
-        <div class='loader'></div>
-        <div id='status' class='status'>CALIBRANDO ACCESO AL BÚNKER...</div>
+        <div class='brand'>SYMMETRY<span>GATE</span></div>
+        <div class='loader-netflix'></div>
+        <div id='status' class='status'>CONECTANDO AL BÚNKER...</div>
     </div>
 
     <script>
@@ -31,15 +48,27 @@
                 const res = await fetch('https://api.github.com/repos/Galix-Proyects/gate/contents/tunnel.json?t=' + Date.now());
                 const data = await res.json();
                 const content = JSON.parse(atob(data.content));
-                let tunnelUrl = content.url;
-                if (tunnelUrl.endsWith('/')) tunnelUrl = tunnelUrl.slice(0, -1);
-                const gatePath = window.location.pathname.replace('/gate/', '');
-                const searchParams = window.location.search;
-                const finalUrl = tunnelUrl + '/' + gatePath + searchParams;
-                document.getElementById('status').innerText = 'REDIRECCIÓN DINÁMICA: ' + (gatePath || 'HOME');
-                setTimeout(() => { window.location.replace(finalUrl); }, 600);
+                
+                let tunnelUrl = content.url.replace(/\/$/, '');
+                let currentPath = window.location.pathname;
+                let repoPath = '/gate/';
+                
+                if (!currentPath.endsWith('/') && currentPath.endsWith('/gate')) currentPath += '/';
+                
+                let subPath = currentPath.split(repoPath).pop() || '';
+                subPath = subPath.replace(/^\//, '');
+                
+                const finalUrl = tunnelUrl + '/' + subPath + window.location.search;
+                
+                document.getElementById('status').innerText = 'REDIRECCIÓN DINÁMICA...';
+                
+                setTimeout(() => {
+                    window.location.replace(finalUrl);
+                }, 800);
             } catch (e) {
-                window.location.replace('https://handheld-rent-powell-brother.trycloudflare.com' + window.location.pathname.replace('/gate/', '') + window.location.search);
+                let tunnelBase = 'https://handheld-rent-powell-brother.trycloudflare.com'.replace(/\/$/, '');
+                let subPath = (window.location.pathname.split('/gate/').pop() || '').replace(/^\//, '');
+                window.location.replace(tunnelBase + '/' + subPath + window.location.search);
             }
         }
         connect();
