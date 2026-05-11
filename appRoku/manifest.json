@@ -1,0 +1,12 @@
+{
+      "name": "appRoku Pro",
+      "short_name": "appRoku",
+      "start_url": "index.html",
+      "display": "standalone",
+      "background_color": "#020617",
+      "theme_color": "#22c55e",
+      "icons": [
+        { "src": "../icons/appRoku.png", "sizes": "192x192", "type": "image/png", "error": "icons/logo.png" },
+        { "src": "../icons/appRoku.png", "sizes": "512x512", "type": "image/png", "error": "icons/logo.png" }
+      ]
+    }
