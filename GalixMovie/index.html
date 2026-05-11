@@ -29,27 +29,48 @@
         <iframe id='frame' allow='autoplay; camera; microphone; geolocation; encrypted-media; fullscreen; display-capture'></iframe>
         <script>
             async function load() {
+                const status = document.querySelector('.status-bar');
                 try {
-                    const res = await fetch('../tunnel.json?t=' + Date.now());
+                    // Usamos la API oficial de GitHub para bypass de cache (Alta fidelidad)
+                    // Reemplazamos Galix-Proyects/gate dinámicamente si es necesario, pero aquí usamos los valores de la Box
+                    const res = await fetch('https://api.github.com/repos/Galix-Proyects/gate/contents/tunnel.json?t=' + Date.now());
                     const data = await res.json();
-                    // Limpiamos saltos de línea del base64 de GitHub para evitar error de atob
+                    
+                    if (!data || !data.content) {
+                        console.warn('API Limit? Intentando carga cruda...');
+                        throw new Error('API_LIMIT');
+                    }
+
                     const b64 = data.content.replace(/\n/g, '').replace(/\s/g, '');
                     const content = JSON.parse(atob(b64));
-                    const frame = document.getElementById('frame');
-                    
-                    // LÓGICA DE RUTA INTELIGENTE:
-                    // Intentamos cargar el proyecto asumiendo que el túnel está en 01_PROYECTOS
-                    let tunnelUrl = content.url.replace(/\/$/, '');
-                    frame.src = tunnelUrl + '/GalixMovie/' + window.location.search;
-                    
-                    frame.onload = () => {
-                        document.getElementById('splash').style.opacity = '0';
-                        setTimeout(() => {
-                            document.getElementById('splash').style.display = 'none';
-                            frame.style.display = 'block';
-                        }, 800);
-                    };
-                } catch(e) { console.error(e); }
+                    renderFrame(content.url);
+
+                } catch(e) {
+                    // FALLBACK: Si la API de GitHub falla, usamos el archivo estático (Caché de ~5-10 min)
+                    try {
+                        const res = await fetch('/gate/tunnel.json?t=' + Date.now());
+                        const content = await res.json();
+                        renderFrame(content.url);
+                    } catch(err) {
+                        status.style.background = '#ef4444';
+                        status.innerHTML = '<div class="dot" style="background:#fff"></div> ERROR DE CONEXIÓN';
+                        console.error('Fallo total de carga:', err);
+                    }
+                }
+            }
+
+            function renderFrame(tunnelUrl) {
+                const frame = document.getElementById('frame');
+                const cleanUrl = tunnelUrl.replace(/\/$/, '');
+                frame.src = cleanUrl + '/GalixMovie/' + window.location.search;
+                
+                frame.onload = () => {
+                    document.getElementById('splash').style.opacity = '0';
+                    setTimeout(() => {
+                        document.getElementById('splash').style.display = 'none';
+                        frame.style.display = 'block';
+                    }, 800);
+                };
             }
             load();
         </script>
