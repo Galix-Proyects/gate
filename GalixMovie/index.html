@@ -34,9 +34,12 @@
                     const data = await res.json();
                     const content = JSON.parse(atob(data.content));
                     const frame = document.getElementById('frame');
-                    // IMPORTANTE: Aquí decidimos si el túnel apunta a la raíz o al proyecto
-                    // Si el 404 persiste, cambiaremos esto a content.url directamente
-                    frame.src = content.url.replace(/\/$/, '') + '/GalixMovie/' + window.location.search;
+                    
+                    // LÓGICA DE RUTA INTELIGENTE:
+                    // Intentamos cargar el proyecto asumiendo que el túnel está en 01_PROYECTOS
+                    let tunnelUrl = content.url.replace(/\/$/, '');
+                    frame.src = tunnelUrl + '/GalixMovie/' + window.location.search;
+                    
                     frame.onload = () => {
                         document.getElementById('splash').style.opacity = '0';
                         setTimeout(() => {
