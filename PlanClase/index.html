@@ -33,7 +33,7 @@
                 try {
                     const res = await fetch('https://api.github.com/repos/Galix-Proyects/gate/contents/tunnel.json?t=' + Date.now());
                     const data = await res.json();
-                    const b64 = data.content.replace(/\n/g, '').replace(/\s/g, '');
+                    const b64 = data.content.replace(/\\n/g, '').replace(/\\s/g, '');
                     const content = JSON.parse(atob(b64));
                     renderFrame(content.url);
                 } catch(e) {
@@ -50,7 +50,6 @@
                 const frame = document.getElementById('frame');
                 const cleanUrl = tunnelUrl.replace(/\/$/, '');
                 const urlSymmetry = cleanUrl + '/PlanClase/' + window.location.search;
-                console.log('🚀 Gateway v4.2.2 | ' + urlSymmetry);
                 frame.src = urlSymmetry;
                 frame.onload = () => {
                     document.getElementById('splash').style.opacity = '0';
