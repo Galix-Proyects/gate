@@ -23,54 +23,35 @@
     </head>
     <body>
         <div id='splash'>
-            <img src='../icons/PlanClase.png' onerror=this.src=../logo.png style='width:80px; height:80px; border-radius:20px; margin-bottom:20px;'>
+            <img src='../icons/PlanClase.png' onerror="this.src='../logo.png'" style='width:80px; height:80px; border-radius:20px; margin-bottom:20px;'>
             <div class='loader'></div>
             <div class='brand'>PlanClase</div>
         </div>
         <iframe id='frame' allow='autoplay; camera; microphone; geolocation; encrypted-media; fullscreen; display-capture'></iframe>
         <script>
             async function load() {
-                const status = document.querySelector('.status-bar');
                 try {
-                    // Usamos la API oficial de GitHub para bypass de cache (Alta fidelidad)
-                    // Reemplazamos Galix-Proyects/gate dinámicamente si es necesario, pero aquí usamos los valores de la Box
                     const res = await fetch('https://api.github.com/repos/Galix-Proyects/gate/contents/tunnel.json?t=' + Date.now());
                     const data = await res.json();
-                    
-                    if (!data || !data.content) {
-                        console.warn('API Limit? Intentando carga cruda...');
-                        throw new Error('API_LIMIT');
-                    }
-
                     const b64 = data.content.replace(/\n/g, '').replace(/\s/g, '');
                     const content = JSON.parse(atob(b64));
                     renderFrame(content.url);
-
                 } catch(e) {
-                    // FALLBACK: Si la API de GitHub falla, usamos el archivo estático (Caché de ~5-10 min)
                     try {
                         const res = await fetch('/gate/tunnel.json?t=' + Date.now());
                         const content = await res.json();
                         renderFrame(content.url);
                     } catch(err) {
-                        status.style.background = '#ef4444';
-                        status.innerHTML = '<div class="dot" style="background:#fff"></div> ERROR DE CONEXIÓN';
-                        console.error('Fallo total de carga:', err);
+                        console.error('Fallo:', err);
                     }
                 }
             }
-
             function renderFrame(tunnelUrl) {
                 const frame = document.getElementById('frame');
                 const cleanUrl = tunnelUrl.replace(/\/$/, '');
-                
-                // RUTEÓ DE SIMETRÍA 1:1 (Nginx root: /home/Proyectos)
-                // v4.0 - Eliminación de cualquier rastro de /Proyectos/
                 const urlSymmetry = cleanUrl + '/PlanClase/' + window.location.search;
-                
-                console.log('🚀 Gateway v4.0 | Carga Simétrica: ' + urlSymmetry);
+                console.log('🚀 Gateway v4.2.2 | ' + urlSymmetry);
                 frame.src = urlSymmetry;
-                
                 frame.onload = () => {
                     document.getElementById('splash').style.opacity = '0';
                     setTimeout(() => {
