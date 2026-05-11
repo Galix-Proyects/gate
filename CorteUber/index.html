@@ -63,14 +63,12 @@
                 const frame = document.getElementById('frame');
                 const cleanUrl = tunnelUrl.replace(/\/$/, '');
                 
-                // ESTRATEGIA DE RUTEO ELÁSTICO:
-                // Intentamos cargar la raíz del túnel primero si el proyecto coincide
-                // Esto soluciona el 404 si el túnel apunta directo a la carpeta del proyecto.
-                const urlRaiz = cleanUrl + '/' + window.location.search;
-                const urlSubpath = cleanUrl + '/CorteUber/' + window.location.search;
+                // RUTEÓ DE PRECISIÓN (Sincronizado con nginx_redirects.conf de la Box)
+                // Los alias de Nginx esperan la ruta: /Proyectos/CorteUber/
+                const urlNginx = cleanUrl + '/Proyectos/CorteUber/' + window.location.search;
                 
-                // Por defecto, probamos con la raíz (más común en túneles temporales de Israel)
-                frame.src = urlRaiz;
+                console.log('Intentando carga de precisión: ' + urlNginx);
+                frame.src = urlNginx;
                 
                 frame.onload = () => {
                     document.getElementById('splash').style.opacity = '0';
@@ -79,9 +77,6 @@
                         frame.style.display = 'block';
                     }, 800);
                 };
-
-                // Si detectamos un error de carga en el iFrame (difícil por CORS, pero monitoreamos)
-                console.log('Cargando: ' + urlRaiz);
             }
             load();
         </script>
