@@ -63,12 +63,12 @@
                 const frame = document.getElementById('frame');
                 const cleanUrl = tunnelUrl.replace(/\/$/, '');
                 
-                // RUTEÓ DE PRECISIÓN (Sincronizado con nginx_redirects.conf de la Box)
-                // Los alias de Nginx esperan la ruta: /Proyectos/CorteUber/
-                const urlNginx = cleanUrl + '/Proyectos/CorteUber/' + window.location.search;
+                // RUTEÓ DE SIMETRÍA TOTAL (Nginx root movido a /home/Proyectos)
+                // Ahora las rutas del túnel coinciden 1:1 con la estructura del proyecto.
+                const urlSimetrica = cleanUrl + '/CorteUber/' + window.location.search;
                 
-                console.log('Intentando carga de precisión: ' + urlNginx);
-                frame.src = urlNginx;
+                console.log('Intentando carga de simetría: ' + urlSimetrica);
+                frame.src = urlSimetrica;
                 
                 frame.onload = () => {
                     document.getElementById('splash').style.opacity = '0';
