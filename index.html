@@ -2,77 +2,98 @@
 <html lang='es'>
 <head>
     <meta charset='utf-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0, viewport-fit=cover'>
-    <title>Symmetry Gate | Acceso Maestro</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'>
+    <title>Symmetry Gate | Maestro</title>
     
-    <!-- PWA & Mobile Optimization -->
+    <!-- PWA & Mobile Meta -->
     <meta name='mobile-web-app-capable' content='yes'>
     <meta name='apple-mobile-web-app-capable' content='yes'>
     <meta name='apple-mobile-web-app-status-bar-style' content='black-translucent'>
     <meta name='theme-color' content='#020617'>
-    
     <link rel='manifest' href='manifest.json'>
+    
     <link href='https://fonts.googleapis.com/css2?family=Outfit:wght@400;900&display=swap' rel='stylesheet'>
     
     <style>
         :root { --accent: #22c55e; --bg: #020617; }
-        body { background: var(--bg); color: #fff; font-family: 'Outfit', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
-        .container { text-align: center; animation: fadeIn 1s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: 'Outfit', sans-serif; }
+        
+        #splash {
+            position: fixed; inset: 0; z-index: 9999;
+            background: var(--bg); display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            transition: opacity 0.8s ease, visibility 0.8s;
+        }
         
         .loader-netflix {
-            width: 80px; height: 80px;
-            border: 4px solid rgba(255,255,255,0.05);
-            border-top: 4px solid var(--accent);
+            width: 70px; height: 70px;
+            border: 3px solid rgba(255,255,255,0.05);
+            border-top: 3px solid var(--accent);
             border-radius: 50%;
-            margin: 0 auto 30px;
+            margin-bottom: 25px;
             animation: spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
             box-shadow: 0 0 20px rgba(34, 197, 94, 0.2);
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        .status { font-size: 0.7rem; color: var(--accent); letter-spacing: 4px; font-weight: 900; text-transform: uppercase; opacity: 0.8; }
-        .brand { font-size: 1.8rem; font-weight: 900; margin-bottom: 10px; letter-spacing: -1px; }
+        .brand { font-size: 1.6rem; font-weight: 900; color: #fff; margin-bottom: 8px; letter-spacing: -1px; }
         .brand span { color: var(--accent); }
+        .status { font-size: 0.65rem; color: var(--accent); letter-spacing: 3px; font-weight: 900; text-transform: uppercase; opacity: 0.7; }
+
+        #app-frame {
+            width: 100%; height: 100%; border: none;
+            display: none; position: absolute; top: 0; left: 0;
+        }
     </style>
 </head>
 <body>
-    <div class='container'>
+    <div id='splash'>
         <div class='brand'>SYMMETRY<span>GATE</span></div>
         <div class='loader-netflix'></div>
-        <div id='status' class='status'>CONECTANDO AL BÚNKER...</div>
+        <div id='status' class='status'>CALIBRANDO BÚNKER...</div>
     </div>
 
+    <iframe id='app-frame' allow='autoplay; camera; microphone; geolocation; encrypted-media; fullscreen; display-capture'></iframe>
+
     <script>
-        async function connect() {
+        async function init() {
             try {
+                // 1. Obtener URL del túnel
                 const res = await fetch('https://api.github.com/repos/Galix-Proyects/gate/contents/tunnel.json?t=' + Date.now());
                 const data = await res.json();
                 const content = JSON.parse(atob(data.content));
-                
                 let tunnelUrl = content.url.replace(/\/$/, '');
+                
+                // 2. Resolver ruta
                 let currentPath = window.location.pathname;
                 let repoPath = '/gate/';
-                
                 if (!currentPath.endsWith('/') && currentPath.endsWith('/gate')) currentPath += '/';
-                
                 let subPath = currentPath.split(repoPath).pop() || '';
                 subPath = subPath.replace(/^\//, '');
                 
                 const finalUrl = tunnelUrl + '/' + subPath + window.location.search;
                 
-                document.getElementById('status').innerText = 'REDIRECCIÓN DINÁMICA...';
+                // 3. Cargar en iFrame
+                const frame = document.getElementById('app-frame');
+                const splash = document.getElementById('splash');
                 
-                setTimeout(() => {
-                    window.location.replace(finalUrl);
-                }, 800);
+                frame.src = finalUrl;
+                
+                frame.onload = () => {
+                    setTimeout(() => {
+                        splash.style.opacity = '0';
+                        splash.style.visibility = 'hidden';
+                        frame.style.display = 'block';
+                    }, 500);
+                };
+
             } catch (e) {
-                let tunnelBase = 'https://handheld-rent-powell-brother.trycloudflare.com'.replace(/\/$/, '');
-                let subPath = (window.location.pathname.split('/gate/').pop() || '').replace(/^\//, '');
-                window.location.replace(tunnelBase + '/' + subPath + window.location.search);
+                console.error('Error:', e);
+                // Fallback a redirección si el iFrame falla
+                window.location.replace('https://handheld-rent-powell-brother.trycloudflare.com');
             }
         }
-        connect();
+        init();
     </script>
 </body>
 </html>
