@@ -1,0 +1,12 @@
+{
+      "name": "CorteUber Pro",
+      "short_name": "CorteUber",
+      "start_url": "index.html",
+      "display": "standalone",
+      "background_color": "#020617",
+      "theme_color": "#22c55e",
+      "icons": [
+        { "src": "../icons/CorteUber.png", "sizes": "192x192", "type": "image/png" },
+        { "src": "../icons/CorteUber.png", "sizes": "512x512", "type": "image/png" }
+      ]
+    }
