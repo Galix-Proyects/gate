@@ -1,1 +1,48 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><title>Galix Gateway | Premium Experience</title><meta name="theme-color" id="themeColor" content="#e11d48"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><script>(function(){var params=new URLSearchParams(window.location.search);var project=params.get("p");var isMovie=project==="GalixMovie";var isPlan=project==="PlanClase";var manifest=document.createElement("link");manifest.rel="manifest";if(isMovie) manifest.href="manifest_movie.json";else if(isPlan) manifest.href="manifest_planclase.json";else manifest.href="manifest_panel.json";document.head.appendChild(manifest);var appleIcon=document.createElement("link");appleIcon.rel="apple-touch-icon";if(isMovie) appleIcon.href="logo.png";else if(isPlan) appleIcon.href="planclase_logo.png";else appleIcon.href="panel_logo.png";document.head.appendChild(appleIcon);if(isPlan) document.getElementById("themeColor").content="#10b981";})();</script><style>body{background:#000;color:#fff;margin:0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden}.splash{text-align:center;transition:opacity 0.8s ease}.logo-container{width:200px;height:200px;margin:0 auto;position:relative;animation:netflixIntro 2.5s cubic-bezier(0.7, 0, 0.3, 1) forwards}.logo-img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 0 20px rgba(225,29,72,0.4))}@keyframes netflixIntro{0%{transform:scale(0.5);opacity:0;filter:blur(10px)}20%{opacity:1;filter:blur(0)}80%{transform:scale(1.1);opacity:1}100%{transform:scale(12);opacity:0}}.loader{width:40px;height:40px;border:3px solid rgba(225,29,72,0.2);border-top-color:#e11d48;border-radius:50%;animation:spin 1s linear infinite;margin:20px auto}@keyframes spin{to{transform:rotate(360deg)}}.status-text{font-size:0.8rem;letter-spacing:3px;color:#94a3b8;text-transform:uppercase;margin-top:20px;opacity:0;animation:fadeIn 1s 0.8s forwards}@keyframes fadeIn{to{opacity:1}}</style></head><body><div class="splash" id="splash"><div class="logo-container" id="logoContainer"><img src="logo.png" class="logo-img" id="mainLogo" alt="Galix Logo"></div><div class="loader" id="genericLoader" style="display:none"></div><div class="status-text" id="status">Sincronizando...</div></div><audio id="introSound" src="intro.mp3"></audio><script>const sound=document.getElementById("introSound");function playSfx(){sound.play().catch(()=>{console.log("Audio bloqueado")})}async function route(){const params=new URLSearchParams(window.location.search);const project=params.get("p");const isMovie=project==="GalixMovie";const isPlan=project==="PlanClase";if(isPlan){document.getElementById("mainLogo").src="planclase_logo.png";document.getElementById("mainLogo").style.filter="drop-shadow(0 0 20px rgba(16,185,129,0.4))"}else if(!isMovie){document.getElementById("mainLogo").src="panel_logo.png";document.getElementById("logoContainer").style.animation="none";document.getElementById("logoContainer").style.transform="scale(0.8)";document.getElementById("genericLoader").style.display="block"}if(isMovie||isPlan){document.body.onclick=playSfx;setTimeout(playSfx,200)}try{const res=await fetch("https://api.github.com/repos/Galix-Proyects/gate/contents/tunnel.json?t="+Date.now());const data=await res.json();const content=JSON.parse(atob(data.content));if(content.url){let finalUrl=content.url;if(project){finalUrl+=`/01_PROYECTOS/${project}/`}else{finalUrl+="/index.html"}setTimeout(()=>{document.body.innerHTML=`<iframe src="${finalUrl}" style="border:0; width:100vw; height:100vh; position:absolute; top:0; left:0; background:#000;" allowfullscreen allow="autoplay; fullscreen"></iframe>`},(isMovie||isPlan)?2500:1000)}}catch(e){document.getElementById("status").innerHTML="⚠️ Buscando señal..."}}route();</script></body></html>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Symmetry Gate | Acceso Inteligente</title>
+    <style>
+        body { background: #020617; color: #f8fafc; font-family: 'Segoe UI', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        .container { text-align: center; }
+        .loader {
+            width: 50px; height: 50px;
+            border: 3px solid rgba(34, 197, 94, 0.1);
+            border-top: 3px solid #22c55e;
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .status { font-size: 0.8rem; color: #22c55e; letter-spacing: 2px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='loader'></div>
+        <div id='status' class='status'>CALIBRANDO ACCESO AL BÚNKER...</div>
+    </div>
+
+    <script>
+        async function connect() {
+            try {
+                const res = await fetch('https://api.github.com/repos/Galix-Proyects/gate/contents/tunnel.json?t=' + Date.now());
+                const data = await res.json();
+                const content = JSON.parse(atob(data.content));
+                let tunnelUrl = content.url;
+                if (tunnelUrl.endsWith('/')) tunnelUrl = tunnelUrl.slice(0, -1);
+                const gatePath = window.location.pathname.replace('/gate/', '');
+                const searchParams = window.location.search;
+                const finalUrl = tunnelUrl + '/' + gatePath + searchParams;
+                document.getElementById('status').innerText = 'REDIRECCIÓN DINÁMICA: ' + (gatePath || 'HOME');
+                setTimeout(() => { window.location.replace(finalUrl); }, 600);
+            } catch (e) {
+                window.location.replace('https://handheld-rent-powell-brother.trycloudflare.com' + window.location.pathname.replace('/gate/', '') + window.location.search);
+            }
+        }
+        connect();
+    </script>
+</body>
+</html>
