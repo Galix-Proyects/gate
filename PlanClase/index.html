@@ -63,12 +63,12 @@
                 const frame = document.getElementById('frame');
                 const cleanUrl = tunnelUrl.replace(/\/$/, '');
                 
-                // RUTEÓ DE SIMETRÍA TOTAL (Nginx root movido a /home/Proyectos)
-                // Ahora las rutas del túnel coinciden 1:1 con la estructura del proyecto.
-                const urlSimetrica = cleanUrl + '/PlanClase/' + window.location.search;
+                // RUTEÓ DE SIMETRÍA 1:1 (Nginx root: /home/Proyectos)
+                // v4.0 - Eliminación de cualquier rastro de /Proyectos/
+                const urlSymmetry = cleanUrl + '/PlanClase/' + window.location.search;
                 
-                console.log('Intentando carga de simetría: ' + urlSimetrica);
-                frame.src = urlSimetrica;
+                console.log('🚀 Gateway v4.0 | Carga Simétrica: ' + urlSymmetry);
+                frame.src = urlSymmetry;
                 
                 frame.onload = () => {
                     document.getElementById('splash').style.opacity = '0';
