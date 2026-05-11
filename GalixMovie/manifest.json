@@ -6,7 +6,7 @@
       "background_color": "#020617",
       "theme_color": "#e11d48",
       "icons": [
-        { "src": "../icons/GalixMovie.png", "sizes": "192x192", "type": "image/png" },
-        { "src": "../icons/GalixMovie.png", "sizes": "512x512", "type": "image/png" }
+        { "src": "../icons/GalixMovie.png", "sizes": "192x192", "type": "image/png", "error": "icons/logo.png" },
+        { "src": "../icons/GalixMovie.png", "sizes": "512x512", "type": "image/png", "error": "icons/logo.png" }
       ]
     }
