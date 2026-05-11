@@ -6,7 +6,7 @@
       "background_color": "#020617",
       "theme_color": "#22c55e",
       "icons": [
-        { "src": "../icons/CorteUber.png", "sizes": "192x192", "type": "image/png" },
-        { "src": "../icons/CorteUber.png", "sizes": "512x512", "type": "image/png" }
+        { "src": "../icons/CorteUber.png", "sizes": "192x192", "type": "image/png", "error": "icons/logo.png" },
+        { "src": "../icons/CorteUber.png", "sizes": "512x512", "type": "image/png", "error": "icons/logo.png" }
       ]
     }
