@@ -883,11 +883,12 @@ small, .text-muted, .table-data {
 /* ------------------------------------------- */
 /* 🛡️ DHARMA: Intro Cinemática Transformers  */
 /* ------------------------------------------- */
+/* 🚨 CANARY TEST v2.6 — si ves esto rojo el CSS SI LLEGA */
 .galix-intro {
     position: fixed;
     inset: 0;
     z-index: 999999;
-    background: #000;
+    background: #ff0000 !important;
     display: flex;
     justify-content: center;
     align-items: center;
