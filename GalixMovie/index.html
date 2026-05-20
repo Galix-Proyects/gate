@@ -1,1 +1,648 @@
-<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover'><title>GalixMovie Pro</title><meta name='theme-color' content='#e11d48'><link rel='manifest' href='manifest.json?v=2.2'><link rel='icon' href='../logo.png?v=2.2'><link rel='apple-touch-icon' href='../icons/GalixMovie.png?v=2.2'><style>:root { --accent: #e11d48; --bg: #020617; } body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: sans-serif; } #splash { position: fixed; inset: 0; z-index: 9999; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.8s; } .loader { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.05); border-top: 3px solid var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 20px; } @keyframes spin { to { transform: rotate(360deg); } } iframe { width: 100%; height: 100%; border: none; display: none; }</style></head><body><div id='splash'><img src='../icons/GalixMovie.png?v=2.2' onerror="this.src='../logo.png?v=2.2'" style='width:80px; height:80px; border-radius:20px; margin-bottom:20px;'><div class='loader'></div></div><iframe id='frame'></iframe><script>let currentTunnel='';async function checkTunnel(){try{const res=await fetch('../tunnel.json?t='+Date.now());const content=await res.json();if(!currentTunnel){currentTunnel=content.url;renderFrame(currentTunnel)}else if(currentTunnel!==content.url){window.location.reload()}}catch(e){console.error(e)}}function renderFrame(tunnelUrl){const frame=document.getElementById('frame');frame.src=tunnelUrl.replace(/\/$/,'')+'/GalixMovie/'+window.location.search;frame.onload=()=>{document.getElementById('splash').style.opacity='0';setTimeout(()=>{document.getElementById('splash').style.display='none';frame.style.display='block'},800)}};checkTunnel();setInterval(checkTunnel,60000);</script></body></html>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>GalixMovie | Premium Cinema Experience</title>
+    <meta name="description" content="Tu servidor personal de streaming estilo Netflix. Películas, series y contenido en 4K.">
+    <link rel="stylesheet" href="css/style.css?v=2.5">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icon-192.png">
+    <link rel="apple-touch-icon" href="assets/icon-192.png">
+    <meta name="theme-color" content="#e11d48">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+    <script src="/00_SISTEMA/survival.js"></script>
+    <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+    <!-- 🛡️ DHARMA: Intro Cinemática Transformers -->
+    <div id="galix-intro" class="galix-intro hidden">
+        <div class="intro-text bouncing">
+            <span style="--delay: 0.1s; animation-delay: 0.1s" data-text="G">G</span>
+            <span style="--delay: 0.2s; animation-delay: 0.2s" data-text="A">A</span>
+            <span style="--delay: 0.3s; animation-delay: 0.3s" data-text="L">L</span>
+            <span style="--delay: 0.4s; animation-delay: 0.4s" data-text="I">I</span>
+            <span style="--delay: 0.5s; animation-delay: 0.5s" data-text="X">X</span>
+            <span style="--delay: 0.6s; animation-delay: 0.6s" data-text="M">M</span>
+            <span style="--delay: 0.7s; animation-delay: 0.7s" data-text="O">O</span>
+            <span style="--delay: 0.8s; animation-delay: 0.8s" data-text="V">V</span>
+            <span style="--delay: 0.9s; animation-delay: 0.9s" data-text="I">I</span>
+            <span style="--delay: 1.0s; animation-delay: 1.0s" data-text="E">E</span>
+        </div>
+    </div>
+    <nav class="navbar" id="navbar">
+        <div class="brand" style="cursor: pointer;" onclick="(async () => { 
+            if ('serviceWorker' in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for(let reg of regs) { await reg.unregister(); }
+            }
+            if ('caches' in window) {
+                const keys = await caches.keys();
+                for(let key of keys) { await caches.delete(key); }
+            }
+            window.location.href = window.location.pathname + '?refresh=' + Date.now();
+        })()" title="Hard Refresh / Limpieza Profunda">GALIX<span style="color:white;">MOVIE</span></div>
+        <div class="nav-links">
+            <a href="#" class="nav-link active" onclick="filterContent('all', this)">Inicio</a>
+            <a href="#" class="nav-link" onclick="filterContent('movie', this)">Películas</a>
+            <a href="#" class="nav-link" onclick="filterContent('series', this)">Series</a>
+            <a href="#" class="nav-link" onclick="filterContent('fav', this)">Mi Lista</a>
+        </div>
+        <div class="nav-actions">
+            <div class="search-bar">
+                <ion-icon name="search-outline"></ion-icon>
+                <input type="text" id="searchInput" placeholder="Buscar títulos...">
+            </div>
+            <a href="admin.html" class="config-link" title="Administración">
+                <ion-icon name="settings-outline"></ion-icon>
+            </a>
+        </div>
+    </nav>
+
+    <header class="hero" id="heroSection">
+        <div class="hero-backdrop"></div>
+        <img src="" class="hero-img" id="heroImg" style="display:none;">
+        <div class="hero-content" id="heroContent" style="opacity:0; transition: opacity 1s;">
+            <div class="hero-meta" id="heroMeta"></div>
+            <h1 class="hero-title" id="heroTitle"></h1>
+            <p class="hero-desc" id="heroDesc"></p>
+            <div class="btn-group">
+                <button id="heroPlayBtn" class="glass-btn primary">
+                    <ion-icon name="play"></ion-icon> Ver Ahora
+                </button>
+                <button class="glass-btn secondary">
+                    <ion-icon name="add-outline"></ion-icon> Mi Lista
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main id="mainContent">
+        <!-- Continuar Viendo -->
+        <section class="content-row" id="continueSection" style="display:none;">
+            <h2 class="row-title">Continuar Viendo</h2>
+            <div class="movie-grid" id="continueGrid"></div>
+        </section>
+
+        <!-- Secciones Dinámicas de 10 en 10 Películas -->
+        <div id="dynamicRowsContainer"></div>
+    </main>
+
+    <!-- Ventana de Detalles de Película Premium (HBO / Netflix Style) -->
+    <div id="movieDetailsModal" class="movie-details-modal" style="display:none;">
+        <div class="details-backdrop" onclick="window.closeMovieDetails()"></div>
+        <div class="details-container glass-panel">
+            <button class="details-close-btn" onclick="window.closeMovieDetails()">✕</button>
+            <div class="details-content">
+                <!-- Poster -->
+                <div class="details-poster-area">
+                    <img id="detailsPoster" src="" alt="Poster">
+                </div>
+                <!-- Info -->
+                <div class="details-info-area">
+                    <h1 id="detailsTitle" class="details-title"></h1>
+                    <div class="details-meta">
+                        <span id="detailsRating" class="details-rating-badge">★ 0.0</span>
+                        <span id="detailsYear" class="details-year-badge">0000</span>
+                        <span id="detailsType" class="details-type-badge">PELÍCULA</span>
+                    </div>
+                    <div class="details-section">
+                        <h3>Sinopsis</h3>
+                        <p id="detailsOverview" class="details-overview"></p>
+                    </div>
+                    <div class="details-section">
+                        <h3>Elenco Principal</h3>
+                        <div class="details-cast-wrapper">
+                            <div id="detailsCast" class="details-cast-grid">Cargando reparto...</div>
+                        </div>
+                    </div>
+                    <div class="details-action-area">
+                        <button id="detailsPlayBtn" class="play-action-btn">
+                            <ion-icon name="play-outline" style="font-size:1.2rem;"></ion-icon> Ver Ahora
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* 🍿 ESTILOS PREMIUM PARA VENTANA DE DETALLES (HBO / NETFLIX STYLE) */
+        .movie-details-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .details-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 10, 16, 0.85);
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+            z-index: 1;
+        }
+        .details-container {
+            position: relative;
+            width: 90%;
+            max-width: 900px;
+            max-height: 85vh;
+            background: rgba(15, 23, 42, 0.45) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            -webkit-backdrop-filter: blur(40px) !important;
+            backdrop-filter: blur(40px) !important;
+            border-radius: 24px;
+            overflow-y: auto;
+            z-index: 2;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 40px rgba(124, 58, 237, 0.1);
+            animation: detailsFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes detailsFadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .details-close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+        .details-close-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            transform: rotate(90deg);
+        }
+        .details-content {
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr);
+            gap: 32px;
+            padding: 40px;
+            overflow-x: hidden;
+        }
+        .details-poster-area {
+            width: 100%;
+        }
+        .details-poster-area img {
+            width: 100%;
+            border-radius: 16px;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            object-fit: cover;
+            transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .details-poster-area img:hover {
+            transform: scale(1.02);
+        }
+        .details-info-area {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-width: 0;
+        }
+        .details-title {
+            font-size: 2.2rem;
+            font-weight: 800;
+            font-family: 'Outfit', sans-serif;
+            color: white;
+            margin: 0 0 16px 0;
+            background: linear-gradient(135deg, #fff 30%, rgba(255,255,255,0.7) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .details-meta {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .details-rating-badge {
+            background: rgba(251, 191, 36, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+        .details-year-badge {
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255,255,255,0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .details-type-badge {
+            background: rgba(139, 92, 246, 0.15);
+            color: #a78bfa;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .details-section {
+            margin-bottom: 20px;
+        }
+        .details-section h3 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.4);
+            margin: 0 0 8px 0;
+            font-weight: 700;
+        }
+        .details-overview {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.75);
+            margin: 0;
+        }
+        .details-cast-wrapper {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 12px 14px;
+            margin-top: 8px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.01), 0 4px 15px rgba(0, 0, 0, 0.15);
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+        }
+        .details-cast-grid {
+            display: flex;
+            gap: 14px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 2px 2px 8px 2px;
+            width: 100%;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(139, 92, 246, 0.35) transparent;
+            overscroll-behavior-x: contain;
+            touch-action: pan-x;
+            -webkit-overflow-scrolling: touch;
+            will-change: transform;
+        }
+        .details-cast-grid::-webkit-scrollbar {
+            height: 4px;
+        }
+        .details-cast-grid::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .details-cast-grid::-webkit-scrollbar-thumb {
+            background: rgba(139, 92, 246, 0.35);
+            border-radius: 10px;
+        }
+        .details-cast-grid::-webkit-scrollbar-thumb:hover {
+            background: rgba(139, 92, 246, 0.6);
+        }
+        .actor-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            min-width: 80px;
+            max-width: 80px;
+            flex-shrink: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .actor-card:hover {
+            transform: translateY(-4px) scale(1.05);
+        }
+        .actor-img-wrapper {
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 2px solid rgba(139, 92, 246, 0.2);
+            margin-bottom: 6px;
+            background: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            transition: border-color 0.3s ease;
+        }
+        .actor-card:hover .actor-img-wrapper {
+            border-color: #a78bfa;
+            box-shadow: 0 6px 15px rgba(139, 92, 246, 0.3);
+        }
+        .actor-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .actor-name {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #f8fafc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+            margin-bottom: 2px;
+        }
+        .actor-character {
+            font-size: 0.62rem;
+            color: #94a3b8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+        }
+        .details-action-area {
+            margin-top: 12px;
+        }
+        .play-action-btn {
+            background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            font-size: 1rem;
+            font-weight: 700;
+            border-radius: 14px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .play-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(124, 58, 237, 0.6);
+            filter: brightness(1.1);
+        }
+        .play-action-btn:active {
+            transform: translateY(0);
+        }
+
+        /* RESPONSIVE LAYOUT FOR MOBILE DEVICES */
+        @media (max-width: 768px) {
+            .details-container {
+                width: 95%;
+                max-height: 90vh;
+                border-radius: 20px;
+            }
+            .details-content {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 20px;
+                padding: 24px;
+                overflow-x: hidden;
+            }
+            .details-poster-area {
+                max-width: 180px;
+                margin: 0 auto;
+            }
+            .details-title {
+                font-size: 1.6rem;
+                text-align: center;
+            }
+            .details-meta {
+                justify-content: center;
+            }
+            .details-close-btn {
+                top: 12px;
+                right: 12px;
+                width: 36px;
+                height: 36px;
+            }
+            .details-action-area {
+                display: flex;
+                justify-content: center;
+            }
+        }
+    </style>
+
+    <!-- Modal Reproductor Premium -->
+    <div id="playerModal" class="player-modal" style="display:none;">
+        <div class="player-backdrop"></div>
+        <div class="player-container glass-panel">
+            <!-- 🚀 HEADER FLOTANTE MINIMAL (v11.0) -->
+                <div class="player-header" id="playerHeader" style="position: absolute; top: 0; left: 0; width: 100%; z-index: 10000; background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, transparent 100%); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; pointer-events: none;">
+                    <div style="display: flex; align-items: center; gap: 10px; pointer-events: auto;">
+                        <h2 id="playerTitle" style="margin: 0; font-size: 1rem; color: rgba(255,255,255,0.9); font-weight: 600; font-family: 'Outfit', sans-serif;">Cargando...</h2>
+                        <!-- Punto de estado servidor: verde=online, rojo=offline -->
+                        <span id="serverDot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0;"></span>
+                        <span id="currentServerLabel" style="font-size: 0.65rem; color: rgba(255,255,255,0.5); font-family: monospace;">S1</span>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; align-items: center; pointer-events: auto;">
+                        <select id="episodeSelector" style="display: none; background: rgba(15, 23, 42, 0.8); color: white; border: 1px solid rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 10px; font-size: 0.85rem; cursor: pointer; outline: none;"></select>
+                        
+                        <button class="btn-action" title="Siguiente Servidor" onclick="window.tryNextSource(true)" style="background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.25); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s;">
+                            <ion-icon name="play-skip-forward-outline" style="font-size: 1rem;"></ion-icon>
+                        </button>
+
+                        <button id="btnAudio" title="Audio" style="display: none; background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.25); width: 36px; height: 36px; border-radius: 10px; display: none; align-items: center; justify-content: center; cursor: pointer;" onclick="window.tryNextAudio()">
+                            <ion-icon name="musical-notes-outline" style="font-size: 1rem;"></ion-icon>
+                        </button>
+
+                        <button class="btn-action" id="btnFavorite" title="Favorito" onclick="window.toggleFavorite()" style="background: rgba(225, 29, 72, 0.15); color: #fb7185; border: 1px solid rgba(225, 29, 72, 0.25); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                            <ion-icon id="heartIcon" name="heart-outline" style="font-size: 1rem;"></ion-icon>
+                        </button>
+
+                        <button class="btn-action close-btn" title="Cerrar" onclick="window.closePlayer()" style="background: rgba(239, 68, 68, 0.25); color: white; border: none; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem;">✕</button>
+                    </div>
+                </div>
+
+                <div class="player-body" id="playerBodyWrapper" style="background: #000; width: 100%; height: 550px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative;">
+                    <video id="videoPlayer" playsinline controls crossorigin style="width: 100%; height: 100%; object-fit: contain !important;">
+                        Tu navegador no soporta el elemento de video.
+                    </video>
+                    <style>
+                        /* 🎬 CINEMA PROPORTIONAL v11.0 */
+                        body.immersive-active {
+                            overflow: hidden !important;
+                        }
+
+                        .player-container {
+                            width: 95% !important;
+                            max-width: 1300px !important;
+                            background: #000 !important;
+                            border-radius: 20px !important;
+                            overflow: hidden !important;
+                            margin: 20px auto !important;
+                            position: relative !important;
+                            border: none !important;
+                            outline: none !important;
+                            box-shadow: 0 0 60px rgba(0,0,0,0.9);
+                        }
+
+                        /* 🚀 FULLSCREEN: Mismo comportamiento que modo normal */
+                        .immersive-active .player-container {
+                            width: 100vw !important;
+                            max-width: none !important;
+                            height: 100vh !important;
+                            margin: 0 !important;
+                            border-radius: 0 !important;
+                            position: fixed !important;
+                            top: 0 !important; left: 0 !important;
+                            z-index: 99999 !important;
+                            border: none !important;
+                            display: flex !important;
+                            align-items: center !important;
+                            justify-content: center !important;
+                        }
+
+                        /* En fullscreen: el body-wrapper ocupa todo pero el video se proporciona */
+                        .immersive-active #playerBodyWrapper {
+                            width: 100% !important;
+                            height: 100% !important;
+                            display: flex !important;
+                            align-items: center !important;
+                            justify-content: center !important;
+                        }
+
+                        /* El video mantiene su proporción natural - igual que en modo normal */
+                        .immersive-active #videoPlayer {
+                            width: 100% !important;
+                            height: auto !important;
+                            max-height: 100vh !important;
+                            object-fit: contain !important;
+                        }
+
+                        .btn-action:hover {
+                            transform: translateY(-2px);
+                            filter: brightness(1.3);
+                        }
+
+                        .plyr--full-ui, .plyr {
+                            border: none !important;
+                            outline: none !important;
+                        }
+                    </style>
+                <div id="iframePlayerContainer" style="display:none; width:100%; height:100%; background:#000;"></div>
+                <iframe id="embedPlayer" 
+                        style="display:none; width:100%; height:80vh; border:none;" 
+                        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                        allowfullscreen
+                        referrerpolicy="no-referrer">
+                </iframe>
+            </div>
+            <div id="progressBarContainer" style="height:4px; background:rgba(255,255,255,0.1);">
+                <div id="progressBarFill" style="height:100%; background:var(--accent); width:0%; transition:width 0.5s;"></div>
+            </div>
+            </div>
+        </div>
+    </div>
+
+      <script src="js/app.js?v=14.4"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js?v=5.3')
+                .then(reg => {
+                    console.log('[SW] GalixMovie Service Worker v5.3 registrado');
+                    // Auto-reload cuando hay una nueva versión del SW instalada
+                    reg.addEventListener('updatefound', () => {
+                        const newSW = reg.installing;
+                        newSW.addEventListener('statechange', () => {
+                            if (newSW.state === 'activated' && navigator.serviceWorker.controller) {
+                                console.log('[SW] Nueva versión activa — recargando...');
+                                window.location.reload();
+                            }
+                        });
+                    });
+                })
+                .catch(err => console.warn('[SW] Error:', err));
+        }
+
+
+        // 🖥️ MEJORA 2 FIX: Scroll horizontal inteligente y ultra-veloz en PC/Mac (Mouse y Trackpad)
+        window.initGridScrolling = function(grid) {
+            if (!grid || grid.dataset.scrollingInit) return;
+            grid.dataset.scrollingInit = "true";
+
+            // 1) REDIRECCIÓN DE RUEDA (MOUSE / TRACKPAD)
+            grid.addEventListener('wheel', (e) => {
+                const canScrollH = grid.scrollWidth > grid.clientWidth + 1;
+                if (!canScrollH) return;
+
+                // Si hay deltaX (trackpad) se usa deltaX; si no, se redirige deltaY (rueda de mouse)
+                const delta = e.deltaX || e.deltaY;
+                if (!delta) return;
+
+                const canScrollLeft = grid.scrollLeft > 0;
+                const canScrollRight = grid.scrollLeft < (grid.scrollWidth - grid.clientWidth - 1);
+
+                // Smart Escape: Solo interceptar si el carrusel puede avanzar en esa dirección
+                if ((delta > 0 && canScrollRight) || (delta < 0 && canScrollLeft)) {
+                    e.preventDefault();
+                    grid.scrollLeft += delta * 1.5; // Rapidez incrementada a 1.5x
+                }
+            }, { passive: false });
+
+            // 2) DESPLAZAMIENTO POR ARRASTRE DE MOUSE (DRAG-TO-SCROLL)
+            let isDown = false;
+            let startX;
+            let scrollLeft;
+
+            grid.addEventListener('mousedown', (e) => {
+                isDown = true;
+                startX = e.pageX - grid.offsetLeft;
+                scrollLeft = grid.scrollLeft;
+            });
+
+            grid.addEventListener('mouseleave', () => {
+                isDown = false;
+                grid.classList.remove('grabbing');
+            });
+
+            grid.addEventListener('mouseup', () => {
+                isDown = false;
+                grid.classList.remove('grabbing');
+            });
+
+            grid.addEventListener('mousemove', (e) => {
+                if (!isDown) return;
+                const x = e.pageX - grid.offsetLeft;
+                const dist = x - startX;
+                
+                // Solo considerarlo arrastre (drag) si se mueve más de 5 píxeles
+                if (Math.abs(dist) > 5) {
+                    grid.classList.add('grabbing');
+                    e.preventDefault();
+                    const walk = dist * 1.8; // Velocidad de arrastre de 1.8x
+                    grid.scrollLeft = scrollLeft - walk;
+                }
+            });
+        };
+
+        // Inicializar los grids existentes en la carga
+        document.querySelectorAll('.movie-grid').forEach(grid => window.initGridScrolling(grid));
+    </script>
+</body>
+</html>
