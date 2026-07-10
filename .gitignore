@@ -11,3 +11,17 @@ node_modules/
 temp/
 logs/
 *.log
+
+# Secrets & tokens
+00_SISTEMA/
+**/.icatmi_token.json
+**/.keys_backup.txt
+**/*.key
+**/cert.pem
+**/deploy_gate_fix.php
+**/upload_github.php
+**/upload_gate_html.php
+**/check_gate.sh
+**/init_gate.sh
+**/telegram_bot.py
+**/telegram_wrapper.sh

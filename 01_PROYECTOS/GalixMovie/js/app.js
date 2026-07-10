@@ -124,6 +124,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ─── ACTUALIZAR HERO DINÁMICO ──────────────────────────────────────────
+    function restoreHero() {
+        try {
+            const hd = sessionStorage.getItem('heroData');
+            if (hd) {
+                const data = JSON.parse(hd);
+                const heroImg = document.getElementById('heroImg');
+                const heroContent = document.getElementById('heroContent');
+                const heroTitle = document.getElementById('heroTitle');
+                const heroDesc = document.getElementById('heroDesc');
+                const heroMeta = document.getElementById('heroMeta');
+                if (heroImg && data.backdrop_url) {
+                    heroImg.src = data.backdrop_url;
+                    heroImg.style.display = 'block';
+                    heroImg.onload = function() { if (heroContent) heroContent.style.opacity = '1'; };
+                    if (heroImg.complete && heroContent) heroContent.style.opacity = '1';
+                }
+                if (heroTitle) heroTitle.textContent = (data.titulo || '').toUpperCase();
+                if (heroDesc) heroDesc.textContent = data.sinopsis || '';
+                if (heroMeta) {
+                    heroMeta.innerHTML = `<span>${data.fecha_estreno ? String(data.fecha_estreno).split('-')[0] : ''}</span> <span>★ ${data.puntuacion || ''}</span> <span>4K Ultra HD</span>`;
+                }
+            }
+        } catch (e) { console.warn('[Hero] Error restoring cached hero:', e); }
+    }
+
     function updateHero(movie) {
         if (!movie) return;
         const heroImg     = document.getElementById('heroImg');
@@ -146,6 +171,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         heroImg.onload = function() { heroContent.style.opacity = '1'; };
         if (heroImg.complete) heroContent.style.opacity = '1';
+
+        try {
+            sessionStorage.setItem('heroData', JSON.stringify({
+                backdrop_url: heroImg.src,
+                titulo: movie.titulo,
+                sinopsis: movie.sinopsis,
+                fecha_estreno: movie.fecha_estreno,
+                puntuacion: movie.puntuacion
+            }));
+        } catch (e) {}
     }
 
     async function loadContinueWatching() {
@@ -469,10 +504,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 renderGrid(allMovies);
+
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(() => {
+                        const backdrops = allMovies.map(m => m.backdrop_url).filter(Boolean);
+                        const unique = [...new Set(backdrops)];
+                        let i = 0;
+                        const loadNext = () => {
+                            if (i >= unique.length) return;
+                            const img = new Image();
+                            img.src = unique[i++];
+                            img.onload = img.onerror = () => setTimeout(loadNext, 100);
+                        };
+                        loadNext();
+                    }, { timeout: 3000 });
+                }
             }
         } catch (err) { console.error("Error cargando contenido:", err); }
     }
 
+    restoreHero();
     loadContent();
     loadContinueWatching();
 
