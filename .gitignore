@@ -1,0 +1,13 @@
+.DS_Store
+._*
+*.sqlite
+*.db
+*.bak
+*.bak.*
+node_modules/
+.obsidian/
+.venv/
+.trash/
+temp/
+logs/
+*.log
