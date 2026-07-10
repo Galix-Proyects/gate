@@ -1,0 +1,656 @@
+<?php
+/**
+ * Galix Autopilot Engine v1.0 - Background Core Worker
+ * Escaneo, curación de enlaces y auto-cosecha en segundo plano.
+ * ─────────────────────────────────────────────────────────────────
+ */
+error_reporting(0);
+ini_set('display_errors', 0);
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+
+require_once 'db.php';
+require_once 'cache_manager.php';
+
+// Determinar base de URL del servidor para re-extracción interna
+$scheme = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$baseDir = dirname($_SERVER['SCRIPT_NAME']);
+$extractApiUrl = "{$scheme}://{$host}{$baseDir}/extract.php";
+
+// DHARMA OPCACHE BYPASS: forzar recarga si el archivo cambió
+@opcache_reset();
+
+$action = $_GET['action'] ?? 'status';
+
+// ────────────────────────────────────────────────────────────────────────────
+// getProgressFilePath: Encuentra un directorio escribible para el archivo de
+// progreso del worker. Prueba sys_get_temp_dir() y falls back a __DIR__ .
+// ────────────────────────────────────────────────────────────────────────────
+function getProgressFilePath() {
+    $candidates = [
+        sys_get_temp_dir() . '/autopilot_progress.json',
+        __DIR__ . '/autopilot_progress.json',
+    ];
+    foreach ($candidates as $path) {
+        $dir = dirname($path);
+        if (is_writable($dir) || (@mkdir($dir, 0755, true) && is_writable($dir))) {
+            return $path;
+        }
+    }
+    return __DIR__ . '/autopilot_progress.json'; // último recurso
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// findPhpBinary: Busca un binario de PHP ejecutable.
+// Prueba PHP_BINARY, $_SERVER['_'], which, y rutas comunes.
+// ────────────────────────────────────────────────────────────────────────────
+function findPhpBinary() {
+    $candidates = [];
+    // 1. PHP_BINARY de la SAPI actual
+    if (defined('PHP_BINARY') && PHP_BINARY !== '') {
+        $candidates[] = PHP_BINARY;
+    }
+    // 2. Script runner actual (suele funcionar en CGI/FPM con $_SERVER['_'])
+    if (!empty($_SERVER['_']) && is_executable($_SERVER['_'])) {
+        $candidates[] = $_SERVER['_'];
+    }
+    // 3. Buscar en PATH con 'which'
+    $which = trim(shell_exec('which php 2>/dev/null') ?? '');
+    if ($which !== '' && is_executable($which)) {
+        $candidates[] = $which;
+    }
+    // 4. which php8.x
+    for ($v = 8; $v >= 5; $v--) {
+        $w = trim(shell_exec("which php{$v}.2 2>/dev/null") ?? '');
+        if ($w !== '' && is_executable($w)) { $candidates[] = $w; break; }
+    }
+    // 5. Rutas comunes
+    $common = ['/usr/bin/php', '/usr/local/bin/php', '/usr/bin/php8.2', '/usr/bin/php8.1', '/usr/bin/php8.0', '/usr/bin/php7.4'];
+    foreach ($common as $p) {
+        if (is_executable($p)) { $candidates[] = $p; break; }
+    }
+    // Devolver el primero que sea ejecutable
+    foreach ($candidates as $p) {
+        if ($p !== '' && is_executable($p)) return $p;
+    }
+    return null;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// isStableUrl: Detecta URLs IP-bound con tokens firmados de CDN.
+// Las URLs de Goodstream/Vimeos contienen ?t=TOKEN&s=TIMESTAMP&e=EXPIRY
+// Estas son generadas para la IP del servidor que las extrajo.
+// NO deben escribirse en S1/S2 permanentemente (solo otros usuarios del BOX
+// las pueden reproducir). Solo URLs sin tokens firmados van a S1/S2.
+// ────────────────────────────────────────────────────────────────────────────
+function isStableUrl($url) {
+    if (empty($url)) return false;
+    $query = parse_url($url, PHP_URL_QUERY);
+    if (!$query) return true; // Sin params = estable (ej: link directo mp4)
+    parse_str($query, $params);
+    // Tokens firmados en query string: t=token + s=timestamp + e=expiry
+    if (isset($params['t']) && isset($params['s']) && isset($params['e'])) return false;
+    if (isset($params['token']) && isset($params['expires'])) return false;
+    if (isset($params['s']) && isset($params['e']) && strlen((string)$params['s']) >= 9) return false;
+    
+    // Tokens firmados en PATH (ej: callistanise.com/stream/TOKEN/TOKEN/1779014097/ID/master.m3u8)
+    $path = parse_url($url, PHP_URL_PATH) ?? '';
+    if (preg_match('/\/\d{10}\//', $path)) return false;
+    
+    return true;
+}
+
+// Función para verificar el estado de una URL (Copiado y adaptado de check_status.php)
+function checkUrlStatus($url) {
+    $host = parse_url($url, PHP_URL_HOST);
+    if (!$host) return 'down';
+
+    // DHARMA #33: CF Bypass con expiración de token por tiempo
+    $cfBypassDomains = ['medixiru.com', 'cloudwindow-route.com', 'callistanise.com', 'vimeos.', 'goodstream.one'];
+    $isCfDomain = false;
+    foreach ($cfBypassDomains as $cfDomain) {
+        if (strpos($host, $cfDomain) !== false) { $isCfDomain = true; break; }
+    }
+
+    if ($isCfDomain) {
+        $parsed = parse_url($url);
+        $queryStr = $parsed['query'] ?? '';
+        parse_str($queryStr, $params);
+
+        $tokenStart    = isset($params['s']) ? (int)$params['s'] : 0;
+        $tokenDuration = isset($params['e']) ? (int)$params['e'] : 0;
+
+        if ($tokenStart > 0 && $tokenDuration > 0) {
+            $tokenExpiry = $tokenStart + $tokenDuration;
+            if (($tokenExpiry - time()) <= 0) {
+                return 'down';
+            } else {
+                return 'online';
+            }
+        }
+        return 'online';
+    }
+
+    // Probar salud con cURL
+    $referer = "https://blog-peliculas.net/";
+    if (strpos($host, 'latinplay') !== false) {
+        $referer = "https://latinplay.xyz/";
+    } elseif (strpos($host, 'medixiru.com') !== false) {
+        $referer = "https://medixiru.com/";
+    } elseif (strpos($host, 'cloudwindow-route.com') !== false) {
+        $referer = "https://pelisplushd.la/";
+    } elseif (strpos($host, 'ibra.lat') !== false || strpos($host, 'pelisflix') !== false) {
+        $referer = "https://pelisflix1.autos/";
+    }
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_USERAGENT      => "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        CURLOPT_HTTPHEADER     => ["Referer: $referer"],
+        CURLOPT_RANGE          => (strpos($host, 'medixiru') !== false || strpos($host, 'cloudwindow') !== false) ? null : "0-512"
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($httpCode === 403 && (strpos($host, 'medixiru.com') !== false || strpos($host, 'cloudwindow-route.com') !== false)) {
+        $httpCode = 200;
+    }
+
+    if ($httpCode >= 200 && $httpCode < 400) {
+        $lowerResponse = strtolower($response);
+        $blackList = ['dmca request', 'file deleted', 'expired'];
+        foreach ($blackList as $pattern) {
+            if (strpos($lowerResponse, $pattern) !== false) {
+                return 'down';
+            }
+        }
+        return 'online';
+    }
+    return 'down';
+}
+
+if ($action === 'test') {
+    // 🔬 DIAGNÓSTICO — verificar exec, PHP_BINARY, permisos /tmp/, existencia de worker
+    $d = [
+        'php_version' => phpversion(),
+        'php_binary' => defined('PHP_BINARY') ? PHP_BINARY : 'PHP_BINARY not defined',
+        'exec_exists' => function_exists('exec'),
+        'tmp_writable' => is_writable('/tmp'),
+        'tmp_perms' => substr(sprintf('%o', fileperms('/tmp')), -4),
+        'worker_exists' => false, // autopilot_worker.php eliminado (reemplazado por worker inline v2.0)
+        'pdo' => class_exists('PDO'),
+        'disabled_functions' => ini_get('disable_functions'),
+        'open_basedir' => ini_get('open_basedir'),
+        'progress_file' => getProgressFilePath(),
+        'progress_file_exists' => file_exists(getProgressFilePath()),
+        'progress_file_content' => null
+    ];
+    $pf = getProgressFilePath();
+    if (file_exists($pf)) {
+        $d['progress_file_content'] = json_decode(file_get_contents($pf), true);
+    }
+    echo json_encode(["status" => "ok", "diagnostics" => $d]);
+    exit;
+}
+
+if ($action === 'status') {
+    // 📊 OBTENER ESTADO ACTUAL DEL AUTOPILOT ENGINE
+    try {
+        // Contar streams cacheados totales
+        $totalCached = $pdo->query("SELECT COUNT(*) FROM resolved_streams_cache")->fetchColumn();
+        
+        // Contar activos vs expirados/offline
+        $activeCached = $pdo->query("SELECT COUNT(*) FROM resolved_streams_cache WHERE status = 'online' AND expires_at > CURRENT_TIMESTAMP()")->fetchColumn();
+        $expiredCached = $pdo->query("SELECT COUNT(*) FROM resolved_streams_cache WHERE status = 'offline' OR expires_at <= CURRENT_TIMESTAMP()")->fetchColumn();
+        
+        // Obtener últimas 5 entradas agregadas al caché
+        $latest = $pdo->query("SELECT c.titulo, r.servidor_nombre, r.idioma, r.status, r.expires_at 
+                               FROM resolved_streams_cache r 
+                               JOIN contenido c ON r.contenido_id = c.id 
+                               ORDER BY r.id DESC LIMIT 5")->fetchAll(PDO::FETCH_ASSOC);
+
+        echo json_encode([
+            "status" => "success",
+            "engine" => "Galix Autopilot Engine v1.0",
+            "active" => true,
+            "metrics" => [
+                "total_cached_records" => (int)$totalCached,
+                "active_healthy_streams" => (int)$activeCached,
+                "offline_or_expired" => (int)$expiredCached
+            ],
+            "latest_events" => $latest
+        ]);
+        exit;
+    } catch (Exception $e) {
+        echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+        exit;
+    }
+}
+
+if ($action === 'run') {
+    // 🚀 INICIAR PROCESAMIENTO COMPLETO EN SEGUNDO PLANO
+    // Usamos connection-close trick para que el cliente reciba respuesta al
+    // instante mientras el servidor sigue procesando en el mismo proceso.
+    $progressFile = getProgressFilePath();
+    $workerLog = dirname($progressFile) . '/autopilot_worker_error.log';
+    $progress = [
+        'status' => 'running',
+        'total' => 0,
+        'processed' => 0,
+        'healed' => 0,
+        'failed' => 0,
+        'skipped_healthy' => 0,
+        'started_at' => date('Y-m-d H:i:s'),
+        'ended_at' => null,
+        'report' => null,
+        'current' => 'Worker lanzado, inicializando...'
+    ];
+    if (@file_put_contents($progressFile, json_encode($progress), LOCK_EX) === false) {
+        echo json_encode(["status" => "error", "message" => "No se pudo escribir progreso en: {$progressFile}"]);
+        exit;
+    }
+    // Cerrar conexión HTTP temprano: el cliente recibe respuesta al instante
+    // mientras el servidor sigue procesando en el mismo proceso.
+    ignore_user_abort(true);
+    set_time_limit(0);
+    while (ob_get_level() > 0) { ob_end_clean(); }
+    header("Connection: close\r\n");
+    header("Content-Encoding: none\r\n");
+    header("Content-Type: application/json");
+    $response = json_encode(["status" => "started", "message" => "Worker iniciado."]);
+    header("Content-Length: " . strlen($response));
+    echo $response;
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+    flush();
+    // ── A partir de aquí corre en background ─────────────────────────
+    $extractApiUrl = "{$scheme}://{$host}{$baseDir}/extract.php";
+    try {
+        $movies = $pdo->query("SELECT c.id, c.titulo, 'movie' as tipo, m.archivo_path, m.server2, m.server3, m.server4, m.server5 
+                               FROM contenido c 
+                               JOIN peliculas_metadata m ON c.id = m.contenido_id")->fetchAll(PDO::FETCH_ASSOC);
+        $episodes = $pdo->query("SELECT c.id as contenido_id, c.titulo, 'series' as tipo, s.id as episodio_id, s.temporada, s.episodio, s.archivo_path, s.server2, s.server3, s.server4, s.server5 
+                                 FROM contenido c 
+                                 JOIN series_metadata s ON c.id = s.contenido_id")->fetchAll(PDO::FETCH_ASSOC);
+        $allMedia = array_merge($movies, $episodes);
+        $progress['total'] = count($allMedia);
+        writeProgressToFile($progressFile, $progress);
+        $report = [
+            "scanned_contents" => count($allMedia), "seeds_found" => 0, "healthy_cached" => 0, "fallback_cached" => 0,
+            "pruned_dead" => 0, "healed_streams" => 0, "sniper_refresh_needed" => 0,
+            "auto_filled" => [], "fill_skip" => [], "static_dead_detected" => []
+        ];
+        foreach ($allMedia as $item) {
+            $contenido_id = $item['id'] ?? $item['contenido_id'];
+            $episodio_id = $item['episodio_id'] ?? null;
+            $tituloCompleto = $item['titulo'] . ($episodio_id ? " (T{$item['temporada']} E{$item['episodio']})" : "");
+            $servers = [
+                "Servidor 1" => $item['archivo_path'] ?? '', "Servidor 2" => $item['server2'] ?? '',
+                "Servidor 3" => $item['server3'] ?? '', "Servidor 4" => $item['server4'] ?? '', "Servidor 5" => $item['server5'] ?? ''
+            ];
+            foreach ($servers as $name => $url) {
+                if (empty($url)) continue;
+                $isSeed = strpos($url, 'extract:') === 0 || strpos($url, 'sniper:') === 0;
+                if ($isSeed) {
+                    $report['seeds_found']++;
+                    $progress['current'] = $tituloCompleto;
+                    writeProgressToFile($progressFile, $progress);
+                    $urlForLookup = preg_replace('/^(extract:|sniper:)/', '', $url);
+                    $cached = getResolvedCache($pdo, $contenido_id, $episodio_id, $urlForLookup);
+                    $cachedType = !empty($cached) ? ($cached[0]['tipo_resolucion'] ?? '') : '';
+                    $hasHealthyCache = false;
+                    if (!empty($cached)) {
+                        $dbStatus = $cached[0]['status'] ?? 'offline';
+                        $dbExpiry = $cached[0]['expires_at'] ?? null;
+                        $notExpired = !$dbExpiry || (strtotime($dbExpiry) > time());
+                        $resolvedUrl = $cached[0]['resolved_url'];
+                        $servidorNombre = $cached[0]['servidor_nombre'] ?? '';
+                        $isFallback = $servidorNombre === 'Embed Fallback' || $resolvedUrl === $urlForLookup;
+                        if ($dbStatus === 'online' && $notExpired && !$isFallback) {
+                            $hasHealthyCache = true;
+                            $report['healthy_cached']++;
+                            $progress['skipped_healthy']++;
+                            $resolvedUrl = $cached[0]['resolved_url'];
+                            try {
+                                $table = $episodio_id ? 'series_metadata' : 'peliculas_metadata';
+                                $idCol = $episodio_id ? 'id' : 'contenido_id';
+                                $targetId = $episodio_id ? $episodio_id : $contenido_id;
+                                $stmtMeta = $pdo->prepare("SELECT archivo_path, server2, server3, server4, server5 FROM {$table} WHERE {$idCol} = ?");
+                                $stmtMeta->execute([$targetId]);
+                                $rowMeta = $stmtMeta->fetch(PDO::FETCH_ASSOC);
+                                if ($rowMeta) {
+                                    $s1 = trim($rowMeta['archivo_path'] ?? '');
+                                    $s2 = trim($rowMeta['server2'] ?? '');
+                                    $s3 = trim($rowMeta['server3'] ?? '');
+                                    $s4 = trim($rowMeta['server4'] ?? '');
+                                    $s5 = trim($rowMeta['server5'] ?? '');
+                                    if (!isStableUrl($resolvedUrl)) {
+                                        $report['fill_skip'][] = $tituloCompleto . " (URL IP-bound)";
+                                    } elseif ($s1 === $resolvedUrl || $s2 === $resolvedUrl || $s3 === $resolvedUrl || $s4 === $resolvedUrl || $s5 === $resolvedUrl) {
+                                        $report['fill_skip'][] = $tituloCompleto . " (URL duplicada)";
+                                    } elseif ($cachedType === 'hls' || $cachedType === 'mp4') {
+                                        $pdo->prepare("UPDATE {$table} SET archivo_path = ? WHERE {$idCol} = ?")->execute([$resolvedUrl, $targetId]);
+                                        $report['auto_filled'][] = $tituloCompleto . " → S1 (HLS/MP4)";
+                                    } elseif ($cachedType === 'embed') {
+                                        $pdo->prepare("UPDATE {$table} SET server2 = ? WHERE {$idCol} = ?")->execute([$resolvedUrl, $targetId]);
+                                        $report['auto_filled'][] = $tituloCompleto . " → S2 (embed)";
+                                    }
+                                }
+                            } catch (Exception $e) {
+                                file_put_contents($workerLog, '[' . date('Y-m-d H:i:s') . "] Auto-Fill Error: " . $e->getMessage() . "\n", FILE_APPEND);
+                            }
+                        } else {
+                            if ($isFallback) {
+                                $report['fallback_cached'] = ($report['fallback_cached'] ?? 0) + 1;
+                            } else {
+                                $pdo->prepare("UPDATE resolved_streams_cache SET status = 'offline' WHERE id = :id")->execute(['id' => $cached[0]['id']]);
+                                $report['pruned_dead']++;
+                            }
+                        }
+                    }
+                    if (!$hasHealthyCache && strpos($url, 'extract:') === 0) {
+                        $pageUrl = str_replace('extract:', '', $url);
+                        $epQuery = $episodio_id ? "&episodio_id={$episodio_id}" : "";
+                        $triggerUrl = $extractApiUrl . "?url=" . urlencode($pageUrl) . "&contenido_id={$contenido_id}{$epQuery}&t=" . time();
+                        $ch = curl_init();
+                        curl_setopt_array($ch, [
+                            CURLOPT_URL => $triggerUrl, CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_SSL_VERIFYPEER => false, CURLOPT_TIMEOUT => 20
+                        ]);
+                        $res = curl_exec($ch);
+                        curl_close($ch);
+                        $resData = json_decode($res, true);
+                        if ($resData && ($resData['status'] ?? '') === 'success') {
+                            $report['healed_streams']++;
+                        } else {
+                            $report['pruned_dead']++;
+                        }
+                        $progress['processed']++;
+                        $progress['healed'] = $report['healed_streams'];
+                        writeProgressToFile($progressFile, $progress);
+                    } elseif (!$hasHealthyCache) {
+                        $report['sniper_refresh_needed']++;
+                        if (!isset($report['sniper_links'])) $report['sniper_links'] = [];
+                        $report['sniper_links'][] = ['titulo' => $tituloCompleto, 'url' => $urlForLookup];
+                        $progress['processed']++;
+                        writeProgressToFile($progressFile, $progress);
+                    }
+                } else {
+                    $isHttp    = strpos($url, 'http') === 0;
+                    // gdrive: es un remote de rclone — no verificable con file_exists()
+                    $isGdrive  = strpos($url, 'gdrive:') === 0;
+                    // Rutas absolutas Termux (/data/data/com.termux/) no son accesibles
+                    // desde el proceso PHP-FPM (www-data) aunque el archivo exista.
+                    // Las marcamos como virtuales y las saltamos.
+                    $isTermux  = strpos($url, '/data/data/com.termux/') === 0;
+
+                    if ($isHttp) {
+                        $status = checkUrlStatus($url);
+                        if ($status === 'down') {
+                            $report['static_dead_detected'][] = [
+                                "titulo"   => $tituloCompleto,
+                                "servidor" => $name,
+                                "url"      => $url
+                            ];
+                        }
+                    } elseif ($isGdrive || $isTermux) {
+                        // Ruta virtual o con restricción de permisos — asumir disponible
+                        // No agregar a static_dead_detected
+                    } else {
+                        if (!file_exists($url)) {
+                            $report['static_dead_detected'][] = [
+                                "titulo"   => $tituloCompleto,
+                                "servidor" => $name,
+                                "url"      => $url . " (ARCHIVO FALTANTE)"
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+        $progress['status'] = 'completed';
+        $progress['ended_at'] = date('Y-m-d H:i:s');
+        $progress['report'] = $report;
+        writeProgressToFile($progressFile, $progress);
+    } catch (Throwable $e) {
+        $progress['status'] = 'failed';
+        $progress['error'] = $e->getMessage();
+        $progress['ended_at'] = date('Y-m-d H:i:s');
+        writeProgressToFile($progressFile, $progress);
+        file_put_contents($workerLog, '[' . date('Y-m-d H:i:s') . "] FATAL: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine() . "\n", FILE_APPEND);
+    }
+    exit;
+}
+
+function writeProgressToFile($path, $data) {
+    file_put_contents($path, json_encode($data), LOCK_EX);
+}
+
+if ($action === 'progress') {
+    // 📊 LEER PROGRESO DEL WORKER
+    $progressFile = getProgressFilePath();
+    if (!file_exists($progressFile)) {
+        echo json_encode(["status" => "idle", "total" => 0, "processed" => 0, "healed" => 0, "report" => null]);
+        exit;
+    }
+    $raw = file_get_contents($progressFile);
+    $data = json_decode($raw, true);
+    if (!$data || !isset($data['status'])) {
+        $data = ["status" => "idle", "total" => 0, "processed" => 0, "healed" => 0, "report" => null];
+    }
+    echo json_encode($data);
+    exit;
+}
+
+if ($action === 'run_legacy') {
+    // 🚀 INICIAR ESCANEO, CURACIÓN Y RE-COSECHA DE AUTOPILOT
+    $report = [
+        "scanned_contents" => 0,
+        "seeds_found" => 0,
+        "healthy_cached" => 0,
+        "pruned_dead" => 0,
+        "healed_streams" => 0,
+        "sniper_refresh_needed" => 0,
+        "static_dead_detected" => []
+    ];
+
+    try {
+        // 1. Obtener películas con sus servidores
+        $movies = $pdo->query("SELECT c.id, c.titulo, 'movie' as tipo, m.archivo_path, m.server2, m.server3, m.server4, m.server5 
+                               FROM contenido c 
+                               JOIN peliculas_metadata m ON c.id = m.contenido_id 
+                               WHERE c.is_online = 1")->fetchAll(PDO::FETCH_ASSOC);
+
+        // 2. Obtener episodios de series con sus servidores
+        $episodes = $pdo->query("SELECT c.id as contenido_id, c.titulo, 'series' as tipo, s.id as episodio_id, s.temporada, s.episodio, s.archivo_path, s.server2, s.server3, s.server4, s.server5 
+                                 FROM contenido c 
+                                 JOIN series_metadata s ON c.id = s.contenido_id 
+                                 WHERE c.is_online = 1")->fetchAll(PDO::FETCH_ASSOC);
+
+        $allMedia = array_merge($movies, $episodes);
+        $report["scanned_contents"] = count($allMedia);
+
+        foreach ($allMedia as $item) {
+            $contenido_id = $item['id'] ?? $item['contenido_id'];
+            $episodio_id = $item['episodio_id'] ?? null;
+            $tituloCompleto = $item['titulo'] . ($episodio_id ? " (T{$item['temporada']} E{$item['episodio']})" : "");
+
+            // Buscar en todos los campos de servidores (Servidor 1 a 5)
+            $servers = [
+                "Servidor 1" => $item['archivo_path'] ?? '',
+                "Servidor 2" => $item['server2'] ?? '',
+                "Servidor 3" => $item['server3'] ?? '',
+                "Servidor 4" => $item['server4'] ?? '',
+                "Servidor 5" => $item['server5'] ?? ''
+            ];
+
+            foreach ($servers as $name => $url) {
+                if (empty($url)) continue;
+
+                $isSeed = strpos($url, 'extract:') === 0 || strpos($url, 'sniper:') === 0;
+
+                if ($isSeed) {
+                    $report["seeds_found"]++;
+                    
+                    // 🔑 DHARMA Fix #48 v5: El seed_url en caché NO tiene prefijo "extract:/sniper:"
+                    // porque extract.php lo recibe sin prefijo (autopilot lo quita antes de invocar).
+                    // Usamos la URL limpia para el lookup.
+                    $urlForLookup = preg_replace('/^(extract:|sniper:)/', '', $url);
+                    $cached = getResolvedCache($pdo, $contenido_id, $episodio_id, $urlForLookup);
+                    $cachedType = !empty($cached) ? ($cached[0]['tipo_resolucion'] ?? '') : '';
+
+                    
+                    $hasHealthyCache = false;
+                    if (!empty($cached)) {
+                        // Priorizar el status + expiración guardados en BD (evita re-verificar CDNs firmados)
+                        $dbStatus  = $cached[0]['status']     ?? 'offline';
+                        $dbExpiry  = $cached[0]['expires_at'] ?? null;
+                        $notExpired = !$dbExpiry || (strtotime($dbExpiry) > time());
+
+                        if ($dbStatus === 'online' && $notExpired) {
+                            $hasHealthyCache = true;
+                            $report["healthy_cached"]++;
+
+
+                            // 🔥 AUTO-FILL: Si S1 o S2 están vacíos, inyectar el stream cacheado
+                            $resolvedUrl = $cached[0]['resolved_url'];
+                            try {
+                                $table    = $episodio_id ? 'series_metadata'  : 'peliculas_metadata';
+                                $idCol    = $episodio_id ? 'id'                : 'contenido_id';
+                                $targetId = $episodio_id ? $episodio_id        : $contenido_id;
+
+                                $stmtMeta = $pdo->prepare("SELECT archivo_path, server2, server3, server4, server5 FROM {$table} WHERE {$idCol} = ?");
+                                $stmtMeta->execute([$targetId]);
+                                $rowMeta = $stmtMeta->fetch(PDO::FETCH_ASSOC);
+
+                                if ($rowMeta) {
+                                    $s1 = ($rowMeta['archivo_path'] !== null) ? trim($rowMeta['archivo_path']) : '';
+                                    $s2 = ($rowMeta['server2']      !== null) ? trim($rowMeta['server2'])      : '';
+                                    $s3 = ($rowMeta['server3']      !== null) ? trim($rowMeta['server3'])      : '';
+                                    $s4 = ($rowMeta['server4']      !== null) ? trim($rowMeta['server4'])      : '';
+                                    $s5 = ($rowMeta['server5']      !== null) ? trim($rowMeta['server5'])      : '';
+
+                                    // REGLA DEFINITIVA S1/S2 AUTO-FILL (Overwrite enabled, Duplicate prevented):
+                                    // S1 (archivo_path) = HLS/MP4 estable sin token IP-bound
+                                    // S2 (server2)      = Embed estable sin token IP-bound
+                                    // Caché per-IP      = URLs con tokens firmados (Goodstream/Vimeos)
+                                    if (!isStableUrl($resolvedUrl)) {
+                                        $report["fill_skip"][] = $tituloCompleto . " (URL IP-bound → caché per-dispositivo)";
+                                    } elseif ($cached[0]['servidor_nombre'] === 'Embed Fallback' || $resolvedUrl === $urlForLookup) {
+                                        $report["fill_skip"][] = $tituloCompleto . " (Ignorado: Embed Fallback / No extraído)";
+                                    } elseif ($s1 === $resolvedUrl || $s2 === $resolvedUrl || $s3 === $resolvedUrl || $s4 === $resolvedUrl || $s5 === $resolvedUrl) {
+                                        $report["fill_skip"][] = $tituloCompleto . " (URL duplicada en slots)";
+                                    } elseif ($cachedType === 'hls' || $cachedType === 'mp4') {
+                                        // S1: solo HLS/MP4 estables (sobrescribe lo que haya)
+                                        $updMeta = $pdo->prepare("UPDATE {$table} SET archivo_path = ? WHERE {$idCol} = ?");
+                                        $updMeta->execute([$resolvedUrl, $targetId]);
+                                        $report["auto_filled"][] = $tituloCompleto . " → S1 (HLS/MP4)";
+                                    } elseif ($cachedType === 'embed') {
+                                        // S2: solo embeds estables (sobrescribe lo que haya)
+                                        $updMeta = $pdo->prepare("UPDATE {$table} SET server2 = ? WHERE {$idCol} = ?");
+                                        $updMeta->execute([$resolvedUrl, $targetId]);
+                                        $report["auto_filled"][] = $tituloCompleto . " → S2 (embed)";
+                                    }
+                                }
+                            } catch (Exception $e) {
+                                error_log("[Autopilot Auto-Fill Error] " . $e->getMessage());
+                            }
+
+                        } else {
+                            // Caché roto o expirado - eliminar o marcar offline
+                            $pdo->prepare("UPDATE resolved_streams_cache SET status = 'offline' WHERE id = :id")
+                                ->execute(['id' => $cached[0]['id']]);
+                            $report["pruned_dead"]++;
+                        }
+                    }
+
+                    // Si no tiene caché saludable, re-cosechar (Self-Healing)
+                    if (!$hasHealthyCache) {
+                        if (strpos($url, 'extract:') === 0) {
+                            // DHARMA FIX: Limitar a 3 sanaciones por ejecución para evitar 504 Timeouts y OOM
+                            if ($report["healed_streams"] < 3) {
+                                // Re-extraer usando Fénix en segundo plano
+                                $pageUrl = str_replace('extract:', '', $url);
+                                $ch = curl_init();
+                                
+                                // Invocar localmente el extractor pasándole los IDs
+                                $epQuery = $episodio_id ? "&episodio_id={$episodio_id}" : "";
+                                $triggerUrl = "{$extractApiUrl}?url=" . urlencode($pageUrl) . "&contenido_id={$contenido_id}{$epQuery}&t=" . time();
+                                
+                                curl_setopt_array($ch, [
+                                    CURLOPT_URL => $triggerUrl,
+                                    CURLOPT_RETURNTRANSFER => true,
+                                    CURLOPT_SSL_VERIFYPEER => false,
+                                    CURLOPT_TIMEOUT => 20
+                                ]);
+                                $res = curl_exec($ch);
+                                curl_close($ch);
+                                
+                                $resData = json_decode($res, true);
+                                if ($resData && $resData['status'] === 'success') {
+                                    $report["healed_streams"]++;
+                                } else {
+                                    // Marcar como fallido pero contarlo para no seguir atascando el servidor
+                                    $report["healed_streams"]++;
+                                }
+                            }
+                        } else {
+                            // sniper: requiere interactividad del cliente
+                            $report["sniper_refresh_needed"]++;
+                            if (!isset($report["sniper_links"])) $report["sniper_links"] = [];
+                            $report["sniper_links"][] = ["titulo" => $tituloCompleto, "url" => $urlForLookup];
+                        }
+                    }
+                } else {
+                    // Es un servidor estático/normal (m3u8 directo, etc.)
+                    $isHttp   = strpos($url, 'http') === 0;
+                    $isGdrive = strpos($url, 'gdrive:') === 0;
+                    $isTermux = strpos($url, '/data/data/com.termux/') === 0;
+
+                    if ($isGdrive || $isTermux) {
+                        // Ruta virtual/remota — no verificable desde PHP-FPM, asumir disponible
+                    } elseif ($isHttp) {
+                        $status = checkUrlStatus($url);
+                        if ($status === 'down') {
+                            $report["static_dead_detected"][] = [
+                                "titulo"   => $tituloCompleto,
+                                "servidor" => $name,
+                                "url"      => $url
+                            ];
+                        }
+                    } else {
+                        // Archivo local con path relativo — verificar con file_exists()
+                        if (!file_exists($url)) {
+                            $report["static_dead_detected"][] = [
+                                "titulo"   => $tituloCompleto,
+                                "servidor" => $name,
+                                "url"      => $url . " (ARCHIVO FALTANTE)"
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        echo json_encode([
+            "status" => "success",
+            "message" => "Escaneo y auto-curación de Autopilot completados.",
+            "report" => $report
+        ]);
+        exit;
+    } catch (Exception $e) {
+        echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+        exit;
+    }
+}
+?>

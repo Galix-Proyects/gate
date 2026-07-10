@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 🛡️ DARMA: Anti-Caché para forzar recarga de JS actualizado -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Admin | GalixMovie Command Center</title>
+    <link rel="stylesheet" href="css/style.css?v=1.11" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="css/style.css?v=1.11"></noscript>
+    <link rel="stylesheet" href="css/admin-icons.css?v=1.0">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet"></noscript>
+    <style>
+        #loadingOverlay{position:fixed;inset:0;z-index:99999;background:#0f172a;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s;font-family:Outfit,sans-serif}
+        #loadingOverlay.hidden{opacity:0;pointer-events:none}
+        #loadingOverlay .spinner{width:48px;height:48px;border:4px solid rgba(16,185,129,.15);border-top-color:#10b981;border-radius:50%;animation:spin .8s linear infinite}
+        #loadingOverlay p{margin-top:20px;color:#94a3b8;font-size:.9rem;animation:pulse 2s infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+    </style>
+    <script>
+        // 🛡️ DHARMA FIX #45: Hard Refresh Nuclear — disponible de inmediato
+        window.hardRefresh = async function() {
+            try {
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map(r => r.unregister()));
+                }
+            } catch (e) { console.warn('[HardRefresh] SW unregister:', e); }
+
+            try {
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map(name => caches.delete(name)));
+                }
+            } catch (e) { console.warn('[HardRefresh] Cache cleanup:', e); }
+
+            try { localStorage.clear(); } catch (e) {}
+            try { sessionStorage.clear(); } catch (e) {}
+
+            window.location.href = window.location.pathname + '?v=' + Date.now();
+        };
+
+        // 🛡️ SID Interceptor — inmediato (no espera DOM), para que todo fetch tenga sesión
+        (function(){
+            const sid = localStorage.getItem('darma_sid');
+            if (!sid) return;
+            const orig = window.fetch;
+            window.fetch = function() {
+                var args = arguments;
+                var r = args[0];
+                if (typeof r === 'string' && r.includes('backend/')) {
+                    r += (r.includes('?') ? '&' : '?') + 'sid=' + sid;
+                    args = [r, args[1]];
+                }
+                return orig.apply(window, args);
+            };
+        })();
+
+        // Tab switching function
+        window.switchTab = function(tabId) {
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            
+            const panel = document.getElementById('tab-' + tabId);
+            if (panel) panel.classList.add('active');
+            
+            const btn = document.querySelector(`.tab-btn[onclick*="switchTab('${tabId}')"]`);
+            if (btn) btn.classList.add('active');
+            
+            localStorage.setItem('active_admin_tab', tabId);
+        };
+
+        // ⚡ Stubs visibles: el toast se auto-destruye cuando admin-bundle.js se ejecuta
+        window.__stubToast = null;
+        function stubFeedback() {
+            if (window.__stubToast) return;
+            var t = document.getElementById('loadingOverlay');
+            if (t) {
+                var p = t.querySelector('p');
+                if (p) p.textContent = 'Cargando...';
+                var s = t.querySelector('.spinner');
+                if (s) s.style.borderTopColor = '#f59e0b';
+            }
+        }
+        ['toggleCardBody','runScan','sortTable','loadAutopilotStats','dismissAutopilotToast','showAutopilotReport','runAutopilot',
+         'checkAllServers','syncGateway','syncGDriveGlobal','runAuditor','scanMP4s','cleanGarbageFiles','manualIndex','clearManualFields',
+         'dismissMP4RepairToast','showMP4RepairReport','resetMP4Repair'
+        ].forEach(function(n){ window[n] = window[n] || stubFeedback; });
+
+        // 🛡️ Auth check + apply_indexes (diferido a DOMContentLoaded)
+        document.addEventListener('DOMContentLoaded', () => {
+            fetch('backend/check_session.php')
+                .then(res => {
+                    if (!res.ok) {
+                        localStorage.removeItem('darma_sid');
+                        window.location.href = 'login.html';
+                    }
+                })
+                .catch(() => window.location.href = 'login.html');
+
+            fetch('backend/apply_indexes.php').catch(() => {});
+            
+            // Restore active tab
+            const activeTab = localStorage.getItem('active_admin_tab') || 'library';
+            switchTab(activeTab);
+        });
+    </script>
+</head>
+
+<body>
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <p>Inicializando Centro de Mando...</p>
+    </div>
+    <!-- 🚀 Autopilot Toast Notification (Fijo Superior) -->
+    <div id="autopilotToast">
+        <div id="toastTitle">⚙️ Autopilot Engine</div>
+        <div id="toastProgress">Inicializando...</div>
+        <div id="toastBar"><div id="toastBarFill"></div></div>
+        <div id="toastDetails"></div>
+        <div class="toast-actions">
+            <button onclick="dismissAutopilotToast()" id="toastDismiss">✕ Cerrar</button>
+            <button onclick="showAutopilotReport()" id="toastViewReport" class="primary" style="display:none;">📋 Ver Reporte</button>
+        </div>
+    </div>
+
+    <!-- 🔧 MP4 Repair Toast Notification -->
+    <div id="mp4RepairToast">
+        <div id="mp4RepairTitle">🔧 Reparando MP4s</div>
+        <div id="mp4RepairProgress">Inicializando...</div>
+        <div id="mp4RepairBar"><div id="mp4RepairBarFill"></div></div>
+        <div id="mp4RepairDetails"></div>
+        <div id="mp4RepairEta" style="margin-top:6px;font-size:0.85rem;color:#94a3b8;display:none;"></div>
+        <div class="toast-actions">
+            <button onclick="resetMP4Repair()" id="mp4RepairReset" style="display:none; background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid #ef4444; padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.8rem;">🔄 Cancelar</button>
+            <button onclick="dismissMP4RepairToast()" id="mp4RepairDismiss">✕ Cerrar</button>
+            <button onclick="showMP4RepairReport()" id="mp4RepairViewReport" class="primary" style="display:none;">📋 Ver Reporte</button>
+        </div>
+    </div>
+    <div class="admin-header">
+        <h1>Centro de Comando <span style="color:var(--accent);">Galix</span></h1>
+        <div style="display: flex; gap: 1rem;">
+            <button onclick="hardRefresh()" class="btn-scan" style="background: rgba(236, 72, 153, 0.1); color: #ec4899; border: 1px solid #ec4899;" title="Hard Refresh / Limpieza Profunda (SW + Cachés + Storage)">
+                <b class="i-skull"></b> Hard Refresh
+            </button>
+            <a href="index.html" class="btn-scan" style="background: rgba(255,255,255,0.1); text-decoration: none;">
+                <b class="i-home"></b> Inicio
+            </a>
+            <a href="backend/logout.php" class="btn-scan" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; text-decoration: none;">
+                <b class="i-logout"></b> Salir
+            </a>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-val" id="totalMovies">0</div>
+            <div class="stat-label">Total en Catálogo</div>
+        </div>
+        <div class="stat-card" style="border:1px solid rgba(16,185,129,0.3);">
+            <div class="stat-val" id="statLocalMovies" style="color:#10b981;">0</div>
+            <div class="stat-label">Películas Locales</div>
+        </div>
+        <div class="stat-card" style="border:1px solid rgba(251,191,36,0.3);">
+            <div class="stat-val" id="statSeries" style="color:#fbbf24;">0</div>
+            <div class="stat-label">Series</div>
+        </div>
+        <div class="stat-card" style="border:1px solid rgba(167,139,250,0.3);">
+            <div class="stat-val" id="statTv" style="color:#a78bfa;">0</div>
+            <div class="stat-label">TV en Línea</div>
+        </div>
+
+        <div class="stat-card" style="border: 1px solid rgba(167, 139, 250, 0.2);">
+            <div class="stat-val" id="totalAutopilot" style="color: #a78bfa;">0 / 0</div>
+            <div class="stat-label">Autopilot: Cache Activa / Total</div>
+            <div style="font-size: 0.7rem; color: #a78bfa; margin-top: 5px; display: flex; align-items: center; gap: 5px;">
+                <b class="i-flash"></b> Cosecha Dinámica de Alta Disponibilidad
+            </div>
+        </div>
+    </div>
+
+    <!-- Alertas de archivos sin coincidencia -->
+    <div id="alertSection" style="display:none; margin-bottom:2rem;">
+        <h2 style="color:#fbbf24; margin-bottom:1rem; display:flex; align-items:center; gap:10px;">
+            <b class="i-warning"></b>
+            Archivos Sin Coincidencia — Indexación Manual
+        </h2>
+        <div id="alertList" style="max-height: 400px; overflow-y: auto; padding-right: 10px; scrollbar-width: thin; scrollbar-color: var(--accent) transparent;"></div>
+    </div>
+
+    <!-- Global Actions Command Center -->
+    <div style="background: rgba(30, 41, 59, 0.4); padding: 15px 20px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05); margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+        <div style="font-weight: 700; color: #fff; font-size: 0.95rem; display: flex; align-items: center; gap: 8px;">
+            <b class="i-flash" style="color: var(--accent);"></b> Acciones Globales
+        </div>
+        <div class="library-actions-grid" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <button id="scanBtn" onclick="runScan()" style="background:rgba(245,158,11,0.1); color:#f59e0b; border:1px solid #f59e0b; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;">
+                <b class="i-refresh"></b> Escanear
+            </button>
+            <label id="scanModeLabel" style="font-size:0.7rem;color:#94a3b8;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;white-space:nowrap;" title="Solo mostrar archivos no indexados">
+                <input type="checkbox" id="scanModeNew" checked style="accent-color:#10b981;width:14px;height:14px;cursor:pointer;"> Solo nuevos
+            </label>
+            <button id="autopilotBtn" onclick="runAutopilot()" style="background:rgba(167,139,250,0.1); color:#a78bfa; border:1px solid #a78bfa; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;">
+                <b class="i-airplane"></b> Autopilot
+            </button>
+            <button id="autopilotReportBtn" onclick="showAutopilotReport()" style="background:rgba(16,185,129,0.1); color:#10b981; border:1px solid #10b981; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:none; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;" title="Ver último reporte de Autopilot">
+                <b class="i-doc"></b> Reporte
+            </button>
+            <button onclick="checkAllServers()" style="background:rgba(16,185,129,0.1); color:#10b981; border:1px solid #10b981; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;">
+                <b class="i-pulse"></b> Verif. Serv.
+            </button>
+            <button onclick="syncGateway()" style="background:rgba(96,165,250,0.1); color:#60a5fa; border:1px solid #60a5fa; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;">
+                <b class="i-upload"></b> Sinc. Gate
+            </button>
+<button onclick="syncGDriveGlobal()" style="background:rgba(99,102,241,0.1); color:#818cf8; border:1px solid #818cf8; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;" title="Escanear Google Drive y sincronizar episodios faltantes">
+    <svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;"><polygon points="12,2 22,20 2,20" fill="none" stroke="#34a853" stroke-width="3" stroke-linejoin="round"/><line x1="12" y1="2" x2="22" y2="20" stroke="#fbbc04" stroke-width="3" stroke-linecap="round"/><line x1="22" y1="20" x2="2" y2="20" stroke="#4285f4" stroke-width="3" stroke-linecap="round"/></svg> Sinc. GDrive
+</button>
+            <button onclick="runAuditor()" style="background:rgba(239,68,68,0.1); color:#ef4444; border:1px solid #ef4444; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;">
+                <b class="i-shield"></b> Aud. Index
+            </button>
+            <button onclick="scanMP4s()" style="background:rgba(220,38,38,0.15); color:#f87171; border:1px solid rgba(220,38,38,0.5); padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;">
+                <b class="i-bug"></b> Reparar MP4s
+            </button>
+            <button onclick="cleanGarbageFiles()" style="background:rgba(100,116,139,0.15); color:#cbd5e1; border:1px solid rgba(100,116,139,0.5); padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;">
+                <b class="i-trash"></b> Limpiar basura
+            </button>
+            <button onclick="backfillEpisodes()" style="background:rgba(251,191,36,0.1); color:#fbbf24; border:1px solid #fbbf24; padding:8px 15px; border-radius:8px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:8px; transition: transform 0.2s, background 0.2s;">
+                📺 Backfill Episodios
+            </button>
+        </div>
+    </div>
+
+    <!-- Navigation Tabs (DHARMA Command Center) -->
+    <div class="tab-nav">
+        <button class="tab-btn active" onclick="switchTab('library')">
+            <b class="i-film"></b> Biblioteca
+        </button>
+        <button class="tab-btn" onclick="switchTab('injector')">
+            <b class="i-planet"></b> Inyector Inteligente
+        </button>
+        <button class="tab-btn" onclick="switchTab('console')">
+            <b class="i-doc"></b> Consola de Sistema
+        </button>
+    </div>
+
+    <!-- 📁 TAB PANEL: BIBLIOTECA -->
+    <div id="tab-library" class="tab-panel active">
+        <div class="admin-header" style="margin-bottom:1.5rem;">
+            <div style="display:flex; align-items:center; gap:15px; cursor:pointer; user-select:none;" onclick="toggleCardBody('libraryManagementBody', 'libraryChevron')">
+                <h2 style="margin:0;">Gestión de Biblioteca</h2>
+                <b id="libraryChevron" class="i-chevron-up" style="font-size:1.4rem; color:var(--text-dim); transition: transform 0.3s; transform: rotate(-180deg);"></b>
+            </div>
+        </div>
+        
+        <div id="libraryManagementBody" class="collapsible-container" style="max-height: none; opacity: 1;">
+            <div class="stat-card" style="margin-bottom: 1.5rem; padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="padding:10px 15px; border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <input id="librarySearch" type="text" placeholder="🔍 Buscar por título, ID o TMDB ID..." style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid #334155; background:#0f172a; color:#fff; font-size:0.9rem; outline:none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='#334155'">
+                </div>
+                <div style="max-height: 600px; overflow-y: auto; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--accent) transparent;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                        <thead style="position: sticky; top: 0; background: #1e293b; z-index: 10; box-shadow: 0 2px 10px rgba(0,0,0,0.3);">
+                            <tr style="border-bottom: 1px solid #333; color: var(--text-dim);">
+                                <th style="padding: 15px 10px; cursor:pointer; user-select:none;" onclick="sortTable('id')">ID <span class="sort-icon">⇅</span></th>
+                                <th style="padding: 15px 10px; cursor:pointer; user-select:none;" onclick="sortTable('titulo')">Título <span class="sort-icon">⇅</span></th>
+                                <th style="padding: 15px 10px; text-align:center;" title="Ubicación local del .mp4">S1 📁</th>
+                                <th style="padding: 15px 10px; text-align:center;" title="Link en la nube .m3u8">S2 ☁️</th>
+                                <th style="padding: 15px 10px; text-align:center;" title="Link en la nube .m3u8">S3 ☁️</th>
+                                <th style="padding: 15px 10px; text-align:center;" title="Semilla (extract:/sniper:)">S4 🌱</th>
+                                <th style="padding: 15px 10px; text-align:center;" title="Semilla (extract:/sniper:)">S5 🌱</th>
+                                <th style="padding: 15px 10px; text-align:center;">HLS</th>
+                                <th style="padding: 15px 10px; cursor:pointer; user-select:none;" onclick="sortTable('tipo')">Tipo <span class="sort-icon">⇅</span></th>
+                                <th style="padding: 15px 10px; cursor:pointer; user-select:none;" onclick="sortTable('tmdb_id')">TMDB ID <span class="sort-icon">⇅</span></th>
+                                <th style="padding: 15px 10px; cursor:pointer; user-select:none;" onclick="sortTable('rating')">Rating <span class="sort-icon">⇅</span></th>
+                                <th style="padding: 15px 10px; text-align:center;">Roku</th>
+                                <th style="padding: 15px 10px;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="movieTableBody">
+                            <!-- Se poblará vía JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Pagination Controls Placeholder -->
+            <div id="paginationControls" style="margin-bottom: 2rem;"></div>
+        </div>
+    </div>
+
+    <!-- 🎯 TAB PANEL: INYECTOR -->
+    <div id="tab-injector" class="tab-panel">
+        <!-- Formulario de indexación manual / Inyector de Links Premium -->
+        <div class="stat-card" style="margin-bottom:2.5rem; position:relative; overflow:hidden;">
+            <div style="position:absolute; top:0; left:0; width:4px; height:100%; background:var(--accent);"></div>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                <div style="display:flex; align-items:center; gap:15px; cursor:pointer; user-select:none;" onclick="toggleCardBody('manualInjectorBody', 'injectorChevron')">
+                    <h3 style="margin:0; font-size:1.2rem; display:flex; align-items:center; gap:10px;">
+                        <b class="i-planet" style="color:var(--accent);"></b>
+                        🎯 Inyectar Contenido Inteligente
+                    </h3>
+                    <b id="injectorChevron" class="i-chevron-up" style="font-size:1.3rem; color:var(--text-dim); transition: transform 0.3s; transform: rotate(-180deg);"></b>
+                </div>
+                <div style="display:flex; gap: 10px;">
+                    <button class="btn-scan" onclick="clearManualFields()" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444; padding: 12px 25px; border-radius:12px; font-weight:600; cursor:pointer; transition: transform 0.2s, background 0.2s;" title="Limpiar todos los campos de inyección">
+                        <b class="i-trash"></b> Limpiar
+                    </button>
+                    <button class="btn-scan" onclick="manualIndex()" style="padding: 12px 25px; border-radius:12px; font-weight:600; box-shadow: 0 4px 15px rgba(16,185,129,0.3); cursor:pointer;">
+                        <b class="i-upload"></b> Inyectar Todo
+                    </button>
+                </div>
+            </div>
+
+            <div id="manualInjectorBody" class="collapsible-container" style="max-height: none; opacity: 1;">
+                <p style="color:var(--text-dim); font-size:0.85rem; margin-top:-5px; margin-bottom:1.5rem;">
+                    Soporta Iframes, m3u8, MP4 y archivos locales de forma adaptativa.
+                </p>
+
+                <!-- Opción de Ingreso Manual -->
+                <div style="margin-bottom:20px; display:flex; align-items:center; gap:10px; background: rgba(251, 191, 36, 0.05); padding: 12px; border-radius: 10px; border: 1px solid rgba(251, 191, 36, 0.15);">
+                    <input type="checkbox" id="manualCheckbox" style="width:20px; height:20px; cursor:pointer; accent-color: var(--accent);">
+                    <label for="manualCheckbox" style="color:#fbbf24; font-weight:bold; cursor:pointer; user-select:none; font-size:0.9rem; display:flex; align-items:center; gap:8px;">
+                        <b class="i-edit" style="font-size:1.2rem;"></b>
+                        🛠️ Ingresar metadatos manualmente (Sin usar TMDB)
+                    </label>
+                </div>
+
+                <!-- Fila Principal -->
+                <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:20px;">
+                    <div>
+                        <label class="mirror-label" style="color:#10b981; font-weight:bold;">S1 📁 Ubicación Local .mp4</label>
+                        <input id="manualFile" type="text" class="injector-input" placeholder="Ruta local del .mp4 o URL directa">
+                    </div>
+                    <div>
+                        <label id="manualIdLabel" class="mirror-label">TMDB ID / Nombre</label>
+                        <input id="manualId" type="text" class="injector-input" placeholder="Ej: 754 o 'The Matrix'">
+                    </div>
+                    <div>
+                        <label class="mirror-label">Categoría</label>
+                        <select id="manualTipo" class="injector-input" style="appearance:none; color: #ef4444; font-weight: bold; background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23ef4444%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 15px top 50%; background-size: 12px auto;">
+                            <option value="movie" style="color: #ef4444; background: #1e293b;">Película</option>
+                            <option value="series" style="color: #ef4444; background: #1e293b;">Serie</option>
+                            <option value="tv" style="color: #ef4444; background: #1e293b;">TV en Vivo</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Campos de Metadatos Manuales (Ocultos por defecto) -->
+                <div id="manualMetaFields" style="display:none; grid-template-columns: 1fr 1fr; gap:20px; margin-top:20px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 15px;">
+                    <div>
+                        <label class="mirror-label" style="color:#fbbf24; font-weight:bold;">Poster URL / Ruta local (Manual)</label>
+                        <input id="manualPoster" type="text" class="injector-input" placeholder="Ej: https://tudominio.com/imagen.jpg o logo.png">
+                    </div>
+                    <div>
+                        <label class="mirror-label" style="color:#fbbf24; font-weight:bold;">Fondo (Backdrop) URL / Ruta local (Manual)</label>
+                        <input id="manualBackdrop" type="text" class="injector-input" placeholder="Ej: https://tudominio.com/fondo.jpg o banner.jpg">
+                    </div>
+                </div>
+
+                <!-- Campos de Series (Ocultos por defecto) -->
+                <div id="seriesFields" style="display:none; grid-template-columns: 1fr 1fr; gap:20px; margin-top:20px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 15px;">
+                    <div>
+                        <label class="mirror-label" style="color:#a78bfa; font-weight:bold;">Temporada</label>
+                        <input id="manualTemp" type="number" class="injector-input" placeholder="Ej: 1" value="1">
+                    </div>
+                    <div>
+                        <label class="mirror-label" style="color:#a78bfa; font-weight:bold;">Episodio</label>
+                        <input id="manualEpisodio" type="number" class="injector-input" placeholder="Ej: 1" value="1">
+                    </div>
+                </div>
+
+                <!-- Sección de Respaldo (Mirrors) -->
+                <div class="mirror-grid">
+                    <div>
+                        <label class="mirror-label" style="color:#10b981;font-weight:bold;">S2 ☁️ Link Nube .m3u8</label>
+                        <input id="manualS2" type="text" class="injector-input" style="padding:8px 12px; font-size:0.85rem;" placeholder="URL .m3u8 en la nube">
+                    </div>
+                    <div>
+                        <label class="mirror-label" style="color:#38bdf8;font-weight:bold;">S3 ☁️ Link Nube .m3u8</label>
+                        <input id="manualS3" type="text" class="injector-input" style="padding:8px 12px; font-size:0.85rem;" placeholder="URL .m3u8 en la nube">
+                    </div>
+                    <div>
+                        <label class="mirror-label" style="color:#a78bfa;font-weight:bold;">S4 🌱 Semilla</label>
+                        <input id="manualS4" type="text" class="injector-input" style="padding:8px 12px; font-size:0.85rem;" placeholder="extract: o sniper:">
+                    </div>
+                    <div>
+                        <label class="mirror-label" style="color:#a78bfa;font-weight:bold;">S5 🌱 Semilla</label>
+                        <input id="manualS5" type="text" class="injector-input" style="padding:8px 12px; font-size:0.85rem;" placeholder="extract: o sniper:">
+                    </div>
+                    <div>
+                        <label class="mirror-label" style="color:#60a5fa; font-weight:bold;">Subtítulos (URL .srt/.vtt)</label>
+                        <input id="manualSubs" type="text" class="injector-input" style="padding:8px 12px; font-size:0.85rem;" placeholder="Link externo (Opcional)">
+                    </div>
+                </div>
+
+                <div id="manualResult" style="margin-top:1.5rem;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 💻 TAB PANEL: CONSOLA -->
+    <div id="tab-console" class="tab-panel">
+        <div class="admin-header" style="margin-bottom:1rem;">
+            <h2>Consola de Sistema</h2>
+        </div>
+        <div id="progressBarContainer" style="display:none;margin-bottom:8px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="flex:1;height:8px;background:#1e293b;border-radius:4px;overflow:hidden;">
+                    <div id="progressBarFill" style="width:0%;height:100%;background:linear-gradient(90deg,#10b981,#34d399);border-radius:4px;transition:width 0.3s ease;"></div>
+                </div>
+                <span id="progressBarText" style="color:#94a3b8;font-size:0.8rem;min-width:45px;text-align:right;font-variant-numeric:tabular-nums;">0%</span>
+            </div>
+            <div id="progressBarMsg" style="color:#64748b;font-size:0.72rem;margin-top:3px;"></div>
+        </div>
+        <div class="console-box" id="consoleOutput">Esperando órdenes...</div>
+    </div>
+
+    <script src="sweetalert2.min.js"></script>
+    <script src="admin-bundle.js"></script>
+</body>
+</html>

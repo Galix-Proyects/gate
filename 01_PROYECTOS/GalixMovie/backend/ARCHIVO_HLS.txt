@@ -1,0 +1,330 @@
+================================================================================
+ ARCHIVO HLS — DOCUMENTACIÓN TÉCNICA COMPLETA
+ Proyecto: GalixMovie (backend PHP + Nginx + rclone + Roku channel)
+ Última actualización: 2026-06-19
+================================================================================
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 1. ARQUITECTURA DE RED
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  Roku (cliente) 
+    │  HTTPS
+    ▼
+  Cloudflare Tunnel (ephemeral, e.g. mambo-kentucky-oil-ten.trycloudflare.com)
+    │  HTTPS → localhost:8080
+    ▼
+  Nginx 1.30.0 (puerto 8080)
+    │
+    ├── location /gdrive/  →  proxy_pass http://127.0.0.1:9091/  (rclone directo, sin PHP)
+    │
+    └── location /GalixMovie/backend/  →  php-fpm (stream.php)
+          │
+          └── stream.php
+                ├── ?hls=1&path=...  → genera playlist .m3u8 (caché en disco + stale-while-revalidate)
+                ├── ?file=...        → sirve segmentos .ts individuales (proxy a rclone)
+                └── ?id=...          → sirve películas/episodios completos (proxy a rclone con Range)
+
+  rclone (GDrive mount, puerto 127.0.0.1:9091)
+    └── VFS cache (full, max 150MB)
+          └── Google Drive remoto
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 2. SISTEMA HLS — CÓMO FUNCIONA
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+2.1. FLUJO DE SOLICITUD (Roku solicita un episodio)
+
+  PASO 1: Roku descarga playlist:
+    GET /GalixMovie/backend/stream.php?hls=1&path=HLS_TEST/S02E03/playlist.m3u8
+    → Nginx → php-fpm → stream.php → rclone → GDrive
+    → Devuelve playlist con URLs RELATIVOS para cada segmento
+
+  PASO 2: Roku parsea playlist y descarga segmentos:
+    GET /GalixMovie/backend/stream.php?file=HLS_TEST/S02E03/playlist000.ts
+    → Nginx → php-fpm → stream.php → rclone → GDrive
+    (se repite para cada segmento, paralelamente)
+
+  PASO 3: Roku reproduce segmentos HLS secuencialmente
+
+2.2. FORMATO DEL PLAYLIST (ejemplo)
+
+    #EXTM3U
+    #EXT-X-VERSION:3
+    #EXT-X-TARGETDURATION:19
+    #EXT-X-MEDIA-SEQUENCE:0
+    #EXT-X-PLAYLIST-TYPE:VOD
+    #EXTINF:16.099000,
+    stream.php?file=HLS_TEST/S02E03/playlist000.ts
+    #EXTINF:5.672000,
+    stream.php?file=HLS_TEST/S02E03/playlist001.ts
+    ...
+    #EXT-X-ENDLIST
+
+  NOTA: Los segmentos usan URLs RELATIVOS (stream.php?file=...) para que el Roku
+  los resuelva contra la base del playlist URL. NO usar rutas absolutas (/gdrive/...)
+  porque el VideoNode de Roku no las resuelve correctamente en HLS.
+
+2.3. CONTEO Y TAMAÑO DE SEGMENTOS
+
+  - ~370-400 segmentos por episodio (variable según duración real)
+  - Cada segmento ~10s de video
+  - Tamaño: 640KB-3.2MB (VBR, variable según complejidad de escena)
+  - Bitrate promedio estimado: ~800kbps - 1.4Mbps
+  - Codec: H.264 en contenedor MPEG-TS (.ts)
+  - Content-Type: video/mp2t
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 3. stream.php — SISTEMA DE CACHÉ DE PLAYLISTS
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+3.1. UBICACIÓN CACHÉ
+
+  Directorio: /Users/israeltorres/hls_temp/{directorio_episodio}/
+  Ejemplo:    /Users/israeltorres/hls_temp/S02E03/playlist.m3u8
+  TTL:        60 segundos
+
+3.2. ALGORITMO (stale-while-revalidate)
+
+  1. ¿Cache existe?
+     → SÍ: ¿Edad <= TTL? → SERVIR CACHE (fresh)
+     → SÍ: ¿Edad > TTL?  → SERVIR CACHE (stale) + regenerar en background*
+     → NO: Fetch de rclone → aplicar reescrituras → guardar cache → servir
+
+  2. *Regeneración en background:
+     - Ocurre DESPUÉS de enviar la respuesta HTTP (fastcgi_finish_request)
+     - curl a rclone con timeout 30s
+     - Reescribe URLs de segmentos (playlist###.ts → stream.php?file=...)
+     - Agrega #EXT-X-PLAYLIST-TYPE:VOD
+     - Guarda en archivo de cache
+     - exit (termina el proceso hijo)
+
+3.3. REWRITES QUE APLICA stream.php AL PLAYLIST CRUDO
+
+  a) Segmentos .ts:
+     RAW:    playlist000.ts
+     REWRITE: stream.php?file=HLS_TEST/S02E03/playlist000.ts
+     (usa regex: /^(playlist\d+\.ts)$/m )
+
+  b) Tipo de playlist:
+     Agrega: #EXT-X-PLAYLIST-TYPE:VOD (después de MEDIA-SEQUENCE)
+
+3.4. SEGURIDAD
+
+  El parámetro ?file=... solo acepta rutas que empiecen con "HLS_TEST/"
+  (strpos(, "HLS_TEST/") !== 0 → 403 Forbidden)
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 4. NODE.JS PREWARM (node/prewarm.js)
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  (No implementado actualmente — el prewarming se hace via PHP + curl)
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 5. AUTO-WARMING (galix.sh sección 5b2)
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  Al iniciar el servidor, galix.sh ejecuta:
+
+    for s in 1 2; do
+      for e in 1 2 3 4 5 6 7 8; do
+        curl -s http://localhost:8080/GalixMovie/backend/stream.php?hls=1&path=HLS_TEST/S0E0/playlist.m3u8
+      done
+    done
+
+  Esto precarga los 16 playlists en caché (S01E01-S01E08, S02E01-S02E08).
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 6. CONFIGURACIÓN NGINX
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  Archivo: /data/data/com.termux/files/home/Proyectos/01_PROYECTOS/GalixMovie/backend/galix_movie_nginx.conf
+
+  location /gdrive/ {
+      proxy_pass http://127.0.0.1:9091/;
+      proxy_set_header Host 127.0.0.1:9091;
+      ...
+
+  NOTA: location /gdrive/ NO se usa actualmente para segmentos HLS.
+  Los segmentos viajan por stream.php?file=... que entra por el location
+  /GalixMovie/backend/ (php-fpm). /gdrive/ queda como respaldo directo
+  para pruebas curl o futuro.
+
+  La razón: el Roku VideoNode no resuelve correctamente rutas absolutas
+  (/gdrive/...) dentro del playlist HLS. Se usan URLs relativos
+  (stream.php?file=...) que el Roku resuelve contra la base del playlist.
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 7. CONFIGURACIÓN RCLONE
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  Parámetros clave en galix.sh (sección rclone):
+
+    --vfs-cache-mode full
+    --vfs-cache-max-size 150M
+    --buffer-size 64M
+    --drive-pacer-min-sleep 10ms
+    --drive-pacer-burst 200
+    --transfers 8
+    --dir-cache-time 24h
+
+  Log: /Users/israeltorres/logs/rclone_gdrive.log
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 8. CANAL ROKU (GalixMovieRoku)
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+8.1. FLUJO DE REPRODUCCIÓN (MainScene.brs)
+
+  playFromGrid(node):
+    1. Guarda wasPrebuffering = m.prebufferActive
+    2. m.prebufferActive = false
+    3. Obtiene URL del video
+    4. Configura VideoNode (tamaño, posición, visibilidad, mute)
+    5. Inicia intro animada (timer, spinner)
+    6. Decide: ¿reutilizar buffer existente?
+       - SÍ (alreadyHasContent): solo llama control = "play"
+       - NO: content = invalid → crea ContentNode → content = vc → control = "play"
+    7. setFocus(true)
+
+  onVideoStateChange():
+    - playing/buffering/error → suppressCloseVideoPlayer = false
+    - paused → showOverlay
+    - playing → (si prebuffer, pausa; si no, setFocus)
+    - buffering → visible = false (si prebuffer)
+    - error → marca prebufferFailedNode
+    - finished/stopped/error → si suppress/prebufferActive, return
+      → si episodio: reabre modal detalles
+      → si no: closeVideoPlayer()
+
+  playFromDetails(node):
+    - Similar a playFromGrid pero sin prebuffer ni intro
+    - Siempre crea contenido fresco
+    - Cierra overlay, reproduce directamente
+
+8.2. PREBUFFER (prebufferEpisode)
+    - Se ejecuta en segundo plano (al navegar entre episodios)
+    - Crea ContentNode y llama control = "prebuffer"
+    - Cuando completa (state = playing), pausa inmediatamente
+    - El contenido queda en RAM para reproducción instantánea
+
+8.3. FLAGS CRÍTICOS
+
+  m.suppressCloseVideoPlayer (bool):
+    - TRUE: el handler de stopped/finished/error NO procesa el evento
+    - FALSE: procesa (reabre modal o cierra player)
+    - Se activa en playFromGrid y se desactiva al llegar a playing/buffering
+
+  m.prebufferActive (bool):
+    - TRUE: modo precarga activo (no mostrar video, pausar al completar)
+    - FALSE: modo reproducción normal
+    - Se limpia en onVideoStateChange (cuando prebuffer completa)
+    - Se limpia en playFromGrid (al iniciar reproducción manual)
+
+  m.prebufferedNode, m.prebufferContentNode:
+    - Referencias al nodo y ContentNode del último prebuffer
+    - Se usan en alreadyHasContent para decidir si reutilizar
+
+8.4. HITOS DE REPRODUCCIÓN Y TIEMPOS ESPERADOS
+
+  Tiempo hasta playing (prebuffer existente):   0.9-1.4s
+  Tiempo hasta playing (buffer fresco):         2-3s (depende de rclone)
+  Segmentos prebuffer:                          10 (~100s de contenido)
+  Timeout prebuffer por segmento:              15s
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 9. HISTORIAL DE CAMBIOS (HLS)
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  2026-06-19:
+    • Segment URL format changed from /gdrive/... to stream.php?file=...
+      (Roku VideoNode no resuelve rutas absolutas en HLS)
+    • Added #EXT-X-PLAYLIST-TYPE:VOD to all playlists
+    • MainScene.brs: added content = invalid before fresh content playback
+    • MainScene.brs: removed isPlaylist (no existe en ContentNode Roku)
+    • MainScene.brs: removed stop + content = invalid from playFromGrid
+      (prevented race condition with async stopped event)
+    • MainScene.brs: wasPrebuffering guard added to alreadyHasContent
+    • MainScene.brs: prebufferActive = false moved to onVideoStateChange
+    • Cache stale-while-revalidate: serve stale cache immediately,
+      regenerate in background (eliminates cold start delay)
+    • Prewarming: 3→10 segments, timeout 3s→15s
+    • Auto-warming added in galix.sh section 5b2
+
+  2026-06-18 (origen):
+    • Implementación inicial de HLS con segmentos .ts
+    • URLs absolutas /gdrive/... para segmentos
+    • Sistema de caché stale-while-revalidate
+    • Prebuffer Roku con 3 segmentos
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 10. RUTAS DE ARCHIVOS CLAVE
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  BACKEND (Box Symmetry / Android):
+
+    ~/Proyectos/01_PROYECTOS/GalixMovie/backend/stream.php
+      → PHP principal: HLS playlist, proxy segmentos, caché, prewarming
+
+    ~/Proyectos/01_PROYECTOS/GalixMovie/backend/galix_movie_nginx.conf
+      → Configuración Nginx (location /gdrive/ y /GalixMovie/backend/)
+
+    ~/Proyectos/00_SISTEMA/_Poderes/galix.sh
+      → Script de inicio (sección 5b2: auto-warming HLS)
+
+    ~/hls_temp/*/playlist.m3u8
+      → Caché de playlists por episodio
+
+    ~/logs/rclone_gdrive.log
+      → Log de rclone
+
+  ROKU CHANNEL (Mac):
+
+    /Volumes/100.102.226.89/Proyectos/01_PROYECTOS/GalixMovieRoku/components/MainScene.brs
+      → Lógica principal: playFromGrid, prebuffer, onVideoStateChange
+
+    /Volumes/100.102.226.89/Proyectos/01_PROYECTOS/GalixMovieRoku/components/ContentReader.brs
+      → Fetch de metadatos desde la BD (títulos, URLs, cast)
+
+    /Volumes/100.102.226.89/Proyectos/01_PROYECTOS/GalixMovieRoku/dist.zip
+      → Build para sideload
+
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 11. COMANDOS ÚTILES
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+  # Probar playlist
+  curl -s https://TUNNEL/GalixMovie/backend/stream.php?hls=1&path=HLS_TEST/S02E03/playlist.m3u8
+
+  # Probar segmento individual
+  curl -s -o /dev/null -w "%{http_code} %{content_type} %{size_download}bytes %{time_total}s\n"     https://TUNNEL/GalixMovie/backend/stream.php?file=HLS_TEST/S02E03/playlist000.ts
+
+  # Ver contenido de caché
+  cat ~/hls_temp/S02E03/playlist.m3u8
+
+  # Limpiar caché de un episodio
+  rm -f ~/hls_temp/S02E03/playlist.m3u8
+
+  # Rebuild dist.zip Roku
+  cd /Volumes/100.102.226.89/Proyectos/01_PROYECTOS/GalixMovieRoku
+  zip -r dist.zip components/ images/ source/ manifest
+
+  # Prueba concurrente (simular Roku)
+  for i in 0
+1
+2
+3
+4; do
+    curl -s -o /dev/null -w "%{http_code} %{time_total}s\n"       https://TUNNEL/GalixMovie/backend/stream.php?file=HLS_TEST/S02E03/playlist00.ts &
+  done
+  wait
+
+  # Ver log de errores de PHP
+  tail -f ~/logs/php_error.log
+
+  # Verificar estado de rclone
+  curl -s http://127.0.0.1:9091/HLS_TEST/S02E03/playlist.m3u8 | head -5
+
+================================================================================
+ FIN DEL ARCHIVO HLS
+================================================================================

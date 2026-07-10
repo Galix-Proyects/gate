@@ -1,0 +1,35 @@
+/* Admin icons — zero external dependencies (Unicode BMP + SVG inline) */
+b[class^=i-]{display:inline-block;width:1.2em;text-align:center;font-style:normal;font-weight:400;line-height:1}
+.i-skull::before{content:'\2620'}
+.i-home::before{content:'\2302';font-size:1.2em}
+.i-logout::before{content:'\2B9E'}
+.i-flash::before{content:'\26A1'}
+.i-warning::before{content:'\26A0'}
+.i-globe::before{content:'\25CE'}
+.i-planet::before{content:'\25CE'}
+.i-chevron-up::before{content:'\25B2';font-size:.75em}
+.i-trash::before{content:'\2716'}
+.i-upload::before{content:'\2B06'}
+.i-edit::before{content:'\270E'}
+.i-refresh::before{content:'\21BB';font-size:1.2em}
+.i-airplane::before{content:'\2708'}
+.i-doc::before{content:'\2261';font-size:1.3em}
+.i-pulse::before{content:'\2665'}
+.i-shield::before{content:'\25C6'}
+.i-bug::before{content:'\2691'}
+.i-search::before{content:'\26B2'}
+.i-close::before{content:'\2715'}
+.i-play::before{content:'\25B6'}
+.i-star::before{content:'\2605';color:#fbbf24}
+.i-check::before{content:'\2713'}
+.i-cloud::before{content:'';display:inline-block;width:1.2em;height:1.2em;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 19H8a6 6 0 1 1 5.8-8.2A4.5 4.5 0 1 1 17 19Z'/%3E%3C/svg%3E") no-repeat center/contain;vertical-align:middle}
+.i-film::before{content:'\25A0'}
+.i-cube-outline::before{content:'\25A6'}
+.i-server-outline::before{content:'\2B1A'}
+.i-radio-button-off-outline::before{content:'\25CB'}
+.i-checkmark-circle::before{content:'\2713'}
+.i-close-circle::before{content:'\2715'}
+.i-alert-circle::before{content:'\26A0'}
+.i-hourglass::before{content:'\29D6'}
+.i-sync-outline::before{content:'\21BB'}
+.i-hdd::before{content:'';display:inline-block;width:1.2em;height:1.2em;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3Cline x1='2' y1='9' x2='22' y2='9'/%3E%3Ccircle cx='7' cy='16' r='1.5'/%3E%3Ccircle cx='13' cy='16' r='1.5'/%3E%3C/svg%3E") no-repeat center/contain;vertical-align:middle}

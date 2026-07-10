@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>GalixMovie | Premium Cinema Experience</title>
+    <meta name="description" content="Tu servidor personal de streaming estilo Netflix. Películas, series y contenido en 4K.">
+    <link rel="stylesheet" href="css/style.css?v=2.8">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="assets/icon-192.png">
+    <link rel="apple-touch-icon" href="assets/icon-192.png">
+    <meta name="theme-color" content="#e11d48">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+    <script src="/00_SISTEMA/survival.js"></script>
+    <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+    <!-- 🛡️ DHARMA: Intro Cinemática Transformers -->
+    <div id="galix-intro" class="galix-intro hidden">
+        <div class="intro-text bouncing">
+            <span style="--delay: 0.1s; animation-delay: 0.1s" data-text="G">G</span>
+            <span style="--delay: 0.2s; animation-delay: 0.2s" data-text="A">A</span>
+            <span style="--delay: 0.3s; animation-delay: 0.3s" data-text="L">L</span>
+            <span style="--delay: 0.4s; animation-delay: 0.4s" data-text="I">I</span>
+            <span style="--delay: 0.5s; animation-delay: 0.5s" data-text="X">X</span>
+            <span style="--delay: 0.6s; animation-delay: 0.6s" data-text="M">M</span>
+            <span style="--delay: 0.7s; animation-delay: 0.7s" data-text="O">O</span>
+            <span style="--delay: 0.8s; animation-delay: 0.8s" data-text="V">V</span>
+            <span style="--delay: 0.9s; animation-delay: 0.9s" data-text="I">I</span>
+            <span style="--delay: 1.0s; animation-delay: 1.0s" data-text="E">E</span>
+        </div>
+    </div>
+    <nav class="navbar" id="navbar">
+        <div class="brand" style="cursor: pointer;" onclick="window.hardRefresh()" title="Hard Refresh / Limpieza Profunda (SW + Cachés + Storage)">GALIX<span style="color:white;">MOVIE</span></div>
+        <div class="nav-links">
+            <a href="#" class="nav-link active" onclick="filterContent('all', this)">
+                <ion-icon name="home-outline"></ion-icon>
+                <span class="nav-label">Inicio</span>
+            </a>
+            <a href="#" class="nav-link" onclick="filterContent('movie', this)">
+                <ion-icon name="film-outline"></ion-icon>
+                <span class="nav-label">Películas</span>
+            </a>
+            <a href="#" class="nav-link" onclick="filterContent('series', this)">
+                <ion-icon name="tv-outline"></ion-icon>
+                <span class="nav-label">Series</span>
+            </a>
+            <a href="#" class="nav-link tv-live-link" onclick="filterContent('tv_live', this)">
+                <ion-icon name="desktop-outline"></ion-icon>
+                <span class="nav-label">TV</span>
+            </a>
+            <a href="#" class="nav-link" onclick="filterContent('clasica', this)">
+                <ion-icon name="videocam-outline"></ion-icon>
+                <span class="nav-label">Clásicos</span>
+            </a>
+            <a href="#" class="nav-link" onclick="filterContent('fav', this)">
+                <ion-icon name="heart-outline"></ion-icon>
+                <span class="nav-label">Mi Lista</span>
+            </a>
+        </div>
+        <div class="nav-actions">
+            <div class="search-bar">
+                <ion-icon name="search-outline"></ion-icon>
+                <input type="text" id="searchInput" placeholder="Buscar títulos...">
+            </div>
+            <button onclick="runCleanup()" style="background:none;border:none;color:#94a3b8;font-size:1.3rem;cursor:pointer;display:flex;align-items:center;padding:6px;border-radius:6px;transition:background 0.2s;" title="Limpiar catálogo (archivos eliminados)" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='none'">
+                <ion-icon name="trash-outline"></ion-icon>
+            </button>
+            <a href="admin.html" class="config-link" title="Administración">
+                <ion-icon name="settings-outline"></ion-icon>
+            </a>
+        </div>
+    </nav>
+
+    <header class="hero" id="heroSection">
+        <div class="hero-backdrop"></div>
+        <img src="" class="hero-img" id="heroImg" style="display:none;">
+        <div class="hero-content" id="heroContent" style="opacity:0; transition: opacity 1s;">
+            <div class="hero-meta" id="heroMeta"></div>
+            <h1 class="hero-title" id="heroTitle"></h1>
+            <p class="hero-desc" id="heroDesc"></p>
+            <div class="btn-group">
+                <button id="heroPlayBtn" class="glass-btn primary">
+                    <ion-icon name="play"></ion-icon> Ver Ahora
+                </button>
+                <button class="glass-btn secondary">
+                    <ion-icon name="add-outline"></ion-icon> Mi Lista
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main id="mainContent">
+        <!-- Continuar Viendo -->
+        <section class="content-row" id="continueSection" style="display:none;">
+            <h2 class="row-title">Continuar Viendo</h2>
+            <div class="movie-grid" id="continueGrid"></div>
+        </section>
+
+        <!-- Secciones Dinámicas de 10 en 10 Películas -->
+        <div id="dynamicRowsContainer"></div>
+    </main>
+
+    <!-- Ventana de Detalles de Película Premium (HBO / Netflix Style) -->
+    <div id="movieDetailsModal" class="movie-details-modal" style="display:none;">
+        <div class="details-backdrop" onclick="window.closeMovieDetails()"></div>
+        <div class="details-container glass-panel">
+            <button class="details-close-btn" onclick="window.closeMovieDetails()">✕</button>
+            <div class="details-content">
+                <!-- Poster -->
+                <div class="details-poster-area">
+                    <img id="detailsPoster" src="" alt="Poster">
+                </div>
+                <!-- Info -->
+                <div class="details-info-area">
+                    <h1 id="detailsTitle" class="details-title"></h1>
+                    <div class="details-meta">
+                        <span id="detailsRating" class="details-rating-badge">★ 0.0</span>
+                        <span id="detailsYear" class="details-year-badge">0000</span>
+                        <span id="detailsType" class="details-type-badge">PELÍCULA</span>
+                    </div>
+                    <div class="details-section">
+                        <h3>Sinopsis</h3>
+                        <p id="detailsOverview" class="details-overview"></p>
+                    </div>
+                    <div class="details-section" id="detailsEpisodesSection" style="display:none;">
+                        <h3>Episodios</h3>
+                        <div id="detailsEpisodes" class="details-episodes-grid"></div>
+                    </div>
+                    <div class="details-section">
+                        <h3>Elenco Principal</h3>
+                        <div class="details-cast-wrapper">
+                            <div id="detailsCast" class="details-cast-grid">Cargando reparto...</div>
+                        </div>
+                    </div>
+                    <div class="details-action-area">
+                        <button id="detailsPlayBtn" class="play-action-btn">
+                            <ion-icon name="play-outline" style="font-size:1.2rem;"></ion-icon> Ver Ahora
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📺 TV EN VIVO — MODAL GLASS (DHARMA Fix #65) -->
+    <div id="tvModal" class="category-modal" style="display:none;">
+        <div class="modal-backdrop" onclick="window.closeTVModal()"></div>
+        <div class="modal-container glass-panel tv-modal-theme">
+            <button class="modal-close-btn" onclick="window.closeTVModal()">✕</button>
+            <div class="modal-header">
+                <h2 class="modal-title">
+                    <ion-icon name="desktop-outline"></ion-icon>
+                    <span class="live-badge">EN VIVO</span>
+                    Televisión
+                </h2>
+            </div>
+            <div class="modal-body">
+                <div class="tv-channels-grid" id="tvChannelsGrid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🎞️ CINE CLÁSICO MEXICANO — MODAL GLASS -->
+    <div id="clasicaModal" class="category-modal" style="display:none;">
+        <div class="modal-backdrop" onclick="window.closeClasicaModal()"></div>
+        <div class="modal-container glass-panel clasica-modal-theme">
+            <button class="modal-close-btn" onclick="window.closeClasicaModal()">✕</button>
+            <div class="modal-header">
+                <h2 class="modal-title">
+                    <ion-icon name="videocam-outline"></ion-icon>
+                    Cine Clásico Mexicano
+                </h2>
+            </div>
+            <div class="modal-body">
+                <div class="movie-grid" id="clasicaGrid"></div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* ════════════════════════════════════════════════════
+           📺 TV EN VIVO — ESTILOS PREMIUM (DHARMA Fix #65)
+           ════════════════════════════════════════════════════ */
+
+        /* Link de TV con animación de pulso */
+        .tv-live-link {
+            position: relative;
+        }
+        .tv-live-link::after {
+            content: '';
+            position: absolute;
+            top: 6px;
+            right: -6px;
+            width: 6px;
+            height: 6px;
+            background: #ef4444;
+            border-radius: 50%;
+            animation: livePulse 1.5s ease-in-out infinite;
+        }
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+            50% { opacity: 0.8; transform: scale(1.15); box-shadow: 0 0 0 4px rgba(239,68,68,0); }
+        }
+
+        /* Wrapper del título con badge LIVE */
+        .row-title-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+        .row-title-wrapper .row-title {
+            margin-bottom: 0;
+        }
+        .live-badge {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            font-size: 0.65rem;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            vertical-align: middle;
+            animation: liveBadgePulse 2s ease-in-out infinite;
+            box-shadow: 0 0 12px rgba(239,68,68,0.5);
+        }
+        @keyframes liveBadgePulse {
+            0%, 100% { box-shadow: 0 0 12px rgba(239,68,68,0.5); }
+            50% { box-shadow: 0 0 20px rgba(239,68,68,0.8); }
+        }
+        .live-pulse {
+            width: 10px;
+            height: 10px;
+            background: #ef4444;
+            border-radius: 50%;
+            animation: livePulse 1.2s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+
+        /* Grid de tarjetas de canal TV — formato 16:9 */
+        .tv-channels-grid {
+            display: flex;
+            gap: 16px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 8px 4px 16px 4px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(239, 68, 68, 0.4) transparent;
+            overscroll-behavior-x: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+        .tv-channels-grid::-webkit-scrollbar { height: 4px; }
+        .tv-channels-grid::-webkit-scrollbar-track { background: transparent; }
+        .tv-channels-grid::-webkit-scrollbar-thumb {
+            background: rgba(239,68,68,0.4);
+            border-radius: 10px;
+        }
+
+        /* Tarjeta de canal — 16:9 horizontal */
+        .tv-channel-card {
+            flex-shrink: 0;
+            width: 240px;
+            border-radius: 14px;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.3s cubic-bezier(0.16,1,0.3,1), box-shadow 0.3s ease;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        .tv-channel-card:hover {
+            transform: translateY(-6px) scale(1.03);
+            box-shadow: 0 12px 35px rgba(239,68,68,0.25);
+            border-color: rgba(239,68,68,0.4);
+        }
+
+        /* Área de imagen 16:9 */
+        .tv-card-img-wrapper {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .tv-card-img-wrapper::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(239,68,68,0.08) 0%, transparent 70%);
+        }
+        .tv-card-logo {
+            max-width: 65%;
+            max-height: 65%;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 8px rgba(0,0,0,0.6));
+            transition: transform 0.3s ease;
+        }
+        .tv-channel-card:hover .tv-card-logo {
+            transform: scale(1.08);
+        }
+
+        /* Indicador LIVE sobre la imagen */
+        .tv-live-indicator {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: #ef4444;
+            color: white;
+            font-size: 0.6rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+            padding: 3px 7px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            box-shadow: 0 2px 8px rgba(239,68,68,0.5);
+        }
+        .tv-live-dot {
+            width: 5px;
+            height: 5px;
+            background: white;
+            border-radius: 50%;
+            animation: livePulse 1s ease-in-out infinite;
+        }
+
+        /* Info de la tarjeta */
+        .tv-card-info {
+            padding: 12px 14px;
+        }
+        .tv-card-name {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #f8fafc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+        .tv-card-desc {
+            font-size: 0.72rem;
+            color: rgba(255,255,255,0.45);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.4;
+        }
+
+        /* Sección de clásicos con gradiente diferenciado */
+        /* ════════════════════════════════════════════════════
+           🪟 MODALES GLASS PARA CATEGORÍAS (TV & CLÁSICOS)
+           ════════════════════════════════════════════════════ */
+        .category-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 10, 16, 0.88);
+            -webkit-backdrop-filter: blur(24px);
+            backdrop-filter: blur(24px);
+            z-index: 1;
+        }
+        .modal-container {
+            position: relative;
+            width: 92%;
+            max-width: 1000px;
+            max-height: 80vh;
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            -webkit-backdrop-filter: blur(40px);
+            backdrop-filter: blur(40px);
+            border-radius: 24px;
+            z-index: 2;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            animation: modalFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.95) translateY(12px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .tv-modal-theme {
+            border-color: rgba(239, 68, 68, 0.2) !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 50px rgba(239, 68, 68, 0.08) !important;
+        }
+        .clasica-modal-theme {
+            border-color: rgba(245, 158, 11, 0.2) !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 50px rgba(245, 158, 11, 0.08) !important;
+        }
+        .modal-close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+        .modal-close-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            transform: rotate(90deg);
+        }
+        .modal-header {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+        .modal-title {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: white;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .modal-title ion-icon {
+            font-size: 1.6rem;
+        }
+        .modal-body {
+            padding: 1.5rem 2rem 2rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        @media (max-width: 768px) {
+            .modal-container {
+                width: 95%;
+                max-height: 85vh;
+                border-radius: 20px;
+            }
+            .modal-header {
+                padding: 1rem 1.25rem;
+            }
+            .modal-title {
+                font-size: 1.1rem;
+                gap: 8px;
+            }
+            .modal-title ion-icon {
+                font-size: 1.3rem;
+            }
+            .modal-body {
+                padding: 1rem 1.25rem 1.25rem;
+            }
+            .modal-close-btn {
+                top: 14px;
+                right: 14px;
+                width: 34px;
+                height: 34px;
+                font-size: 0.95rem;
+            }
+            .tv-channels-grid {
+                gap: 12px;
+            }
+            .tv-channel-card {
+                width: 200px;
+            }
+        }
+
+        /* ════════════════════════════════════════════════════
+           🍿 ESTILOS PREMIUM PARA VENTANA DE DETALLES (HBO / NETFLIX STYLE)
+           ════════════════════════════════════════════════════ */
+        .movie-details-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .details-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 10, 16, 0.85);
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+            z-index: 1;
+        }
+        .details-container {
+            position: relative;
+            width: 90%;
+            max-width: 900px;
+            max-height: 85vh;
+            background: rgba(15, 23, 42, 0.45) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            -webkit-backdrop-filter: blur(40px) !important;
+            backdrop-filter: blur(40px) !important;
+            border-radius: 24px;
+            overflow-y: auto;
+            z-index: 2;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 40px rgba(124, 58, 237, 0.1);
+            animation: detailsFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes detailsFadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .details-close-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+        .details-close-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.4);
+            transform: rotate(90deg);
+        }
+        .details-content {
+            display: grid;
+            grid-template-columns: 300px minmax(0, 1fr);
+            gap: 32px;
+            padding: 40px;
+            overflow-x: hidden;
+        }
+        .details-poster-area {
+            width: 100%;
+        }
+        .details-poster-area img {
+            width: 100%;
+            border-radius: 16px;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            object-fit: cover;
+            transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .details-poster-area img:hover {
+            transform: scale(1.02);
+        }
+        .details-info-area {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-width: 0;
+        }
+        .details-title {
+            font-size: 2.2rem;
+            font-weight: 800;
+            font-family: 'Outfit', sans-serif;
+            color: white;
+            margin: 0 0 16px 0;
+            background: linear-gradient(135deg, #fff 30%, rgba(255,255,255,0.7) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .details-meta {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .details-rating-badge {
+            background: rgba(251, 191, 36, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+        .details-year-badge {
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255,255,255,0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .details-type-badge {
+            background: rgba(139, 92, 246, 0.15);
+            color: #a78bfa;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .details-section {
+            margin-bottom: 20px;
+        }
+        .details-section h3 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.4);
+            margin: 0 0 8px 0;
+            font-weight: 700;
+        }
+        .details-overview {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.75);
+            margin: 0;
+        }
+        .details-cast-wrapper {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 12px 14px;
+            margin-top: 8px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.01), 0 4px 15px rgba(0, 0, 0, 0.15);
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+        }
+        .details-cast-grid {
+            display: flex;
+            gap: 14px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 2px 2px 8px 2px;
+            width: 100%;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(139, 92, 246, 0.35) transparent;
+            overscroll-behavior-x: contain;
+            touch-action: pan-x;
+            -webkit-overflow-scrolling: touch;
+            will-change: transform;
+        }
+        .details-cast-grid::-webkit-scrollbar {
+            height: 4px;
+        }
+        .details-cast-grid::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .details-cast-grid::-webkit-scrollbar-thumb {
+            background: rgba(139, 92, 246, 0.35);
+            border-radius: 10px;
+        }
+        .details-cast-grid::-webkit-scrollbar-thumb:hover {
+            background: rgba(139, 92, 246, 0.6);
+        }
+        .details-episodes-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            max-height: 150px;
+            overflow-y: auto;
+            padding-right: 0;
+            position: relative;
+            scroll-behavior: smooth;
+            scrollbar-width: none;
+        }
+        .details-episodes-grid::-webkit-scrollbar { width: 0; display: none; }
+        .episode-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 12px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s;
+            border: 1px solid rgba(139,92,246,0.1);
+            flex-shrink: 0;
+            min-height: 34px;
+        }
+        .episode-row:hover {
+            background: rgba(139, 92, 246, 0.15);
+            border-color: rgba(139,92,246,0.3);
+            transform: scale(1.01);
+        }
+        .episode-row .ep-number {
+            font-size: 0.75rem;
+            color: #a855f7;
+            font-weight: 700;
+            min-width: 40px;
+            text-align: center;
+        }
+        .episode-row .ep-title {
+            font-size: 0.85rem;
+            color: #e2e8f0;
+            flex: 1;
+        }
+        .episode-row .ep-format {
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+        }
+        .actor-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            min-width: 80px;
+            max-width: 80px;
+            flex-shrink: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .actor-card:hover {
+            transform: translateY(-4px) scale(1.05);
+        }
+        .actor-img-wrapper {
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 2px solid rgba(139, 92, 246, 0.2);
+            margin-bottom: 6px;
+            background: #0f172a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            transition: border-color 0.3s ease;
+        }
+        .actor-card:hover .actor-img-wrapper {
+            border-color: #a78bfa;
+            box-shadow: 0 6px 15px rgba(139, 92, 246, 0.3);
+        }
+        .actor-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .actor-name {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #f8fafc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+            margin-bottom: 2px;
+        }
+        .actor-character {
+            font-size: 0.62rem;
+            color: #94a3b8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+        }
+        .details-action-area {
+            margin-top: 12px;
+        }
+        .play-action-btn {
+            background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            font-size: 1rem;
+            font-weight: 700;
+            border-radius: 14px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .play-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(124, 58, 237, 0.6);
+            filter: brightness(1.1);
+        }
+        .play-action-btn:active {
+            transform: translateY(0);
+        }
+
+        /* RESPONSIVE LAYOUT FOR MOBILE DEVICES */
+        @media (max-width: 768px) {
+            .details-container {
+                width: 95%;
+                max-height: 90vh;
+                border-radius: 20px;
+            }
+            .details-content {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 20px;
+                padding: 24px;
+                overflow-x: hidden;
+            }
+            .details-poster-area {
+                max-width: 180px;
+                margin: 0 auto;
+            }
+            .details-title {
+                font-size: 1.6rem;
+                text-align: center;
+            }
+            .details-meta {
+                justify-content: center;
+            }
+            .details-close-btn {
+                top: 12px;
+                right: 12px;
+                width: 36px;
+                height: 36px;
+            }
+            .details-action-area {
+                display: flex;
+                justify-content: center;
+            }
+        }
+    </style>
+
+    <!-- Modal Reproductor Premium -->
+    <div id="playerModal" class="player-modal" style="display:none;">
+        <div class="player-backdrop"></div>
+        <div class="player-container glass-panel">
+            <!-- 🚀 HEADER FLOTANTE MINIMAL (v11.0) -->
+                <div class="player-header" id="playerHeader" style="position: absolute; top: 0; left: 0; width: 100%; z-index: 10000; background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, transparent 100%); padding: calc(16px + env(safe-area-inset-top, 0px)) calc(24px + env(safe-area-inset-right, 0px)) 16px calc(24px + env(safe-area-inset-left, 0px)); display: flex; justify-content: space-between; align-items: center; pointer-events: none;">
+                    <div style="display: flex; align-items: center; gap: 10px; pointer-events: auto;">
+                        <h2 id="playerTitle" style="margin: 0; font-size: 1rem; color: rgba(255,255,255,0.9); font-weight: 600; font-family: 'Outfit', sans-serif;">Cargando...</h2>
+                        <!-- Punto de estado servidor: verde=online, rojo=offline -->
+                        <span id="serverDot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0;"></span>
+                        <span id="currentServerLabel" style="font-size: 0.65rem; color: rgba(255,255,255,0.5); font-family: monospace;">S1</span>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; align-items: center; pointer-events: auto;">
+                        <select id="episodeSelector" style="display: none; background: rgba(15, 23, 42, 0.8); color: white; border: 1px solid rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 10px; font-size: 0.85rem; cursor: pointer; outline: none;"></select>
+                        
+                        <button class="btn-action" title="Siguiente Servidor" onclick="window.tryNextSource(true)" style="background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.25); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s;">
+                            <ion-icon name="play-skip-forward-outline" style="font-size: 1rem;"></ion-icon>
+                        </button>
+
+                        <button id="btnAudio" title="Audio" style="display: none; background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.25); width: 36px; height: 36px; border-radius: 10px; display: none; align-items: center; justify-content: center; cursor: pointer;" onclick="window.tryNextAudio()">
+                            <ion-icon name="musical-notes-outline" style="font-size: 1rem;"></ion-icon>
+                        </button>
+
+                        <button class="btn-action" id="btnFavorite" title="Favorito" onclick="window.toggleFavorite()" style="background: rgba(225, 29, 72, 0.15); color: #fb7185; border: 1px solid rgba(225, 29, 72, 0.25); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                            <ion-icon id="heartIcon" name="heart-outline" style="font-size: 1rem;"></ion-icon>
+                        </button>
+
+                        <button class="btn-action close-btn" title="Cerrar" onclick="window.closePlayer()" style="background: rgba(239, 68, 68, 0.25); color: white; border: none; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem;">✕</button>
+                    </div>
+                </div>
+
+                <div class="player-body" id="playerBodyWrapper" style="background: #000; width: 100%; height: 550px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative;">
+                    <video id="videoPlayer" playsinline controls crossorigin style="width: 100%; height: 100%; object-fit: contain !important;">
+                        Tu navegador no soporta el elemento de video.
+                    </video>
+                    <style>
+                        /* 🎬 CINEMA PROPORTIONAL v11.0 */
+                        body.immersive-active {
+                            overflow: hidden !important;
+                        }
+
+                        .player-container {
+                            width: 95% !important;
+                            max-width: 1300px !important;
+                            background: #000 !important;
+                            border-radius: 20px !important;
+                            overflow: hidden !important;
+                            margin: 20px auto !important;
+                            position: relative !important;
+                            border: none !important;
+                            outline: none !important;
+                            box-shadow: 0 0 60px rgba(0,0,0,0.9);
+                        }
+
+                        /* 🚀 FULLSCREEN: Mismo comportamiento que modo normal */
+                        .immersive-active .player-container {
+                            width: 100vw !important;
+                            max-width: none !important;
+                            height: 100vh !important;
+                            margin: 0 !important;
+                            border-radius: 0 !important;
+                            position: fixed !important;
+                            top: 0 !important; left: 0 !important;
+                            z-index: 99999 !important;
+                            border: none !important;
+                            display: flex !important;
+                            align-items: center !important;
+                            justify-content: center !important;
+                        }
+
+                        /* En fullscreen: el body-wrapper ocupa todo pero el video se proporciona */
+                        .immersive-active #playerBodyWrapper {
+                            width: 100% !important;
+                            height: 100% !important;
+                            display: flex !important;
+                            align-items: center !important;
+                            justify-content: center !important;
+                        }
+
+                        /* El video mantiene su proporción natural - igual que en modo normal */
+                        .immersive-active #videoPlayer {
+                            width: 100% !important;
+                            height: auto !important;
+                            max-height: 100vh !important;
+                            object-fit: contain !important;
+                        }
+
+                        .btn-action:hover {
+                            transform: translateY(-2px);
+                            filter: brightness(1.3);
+                        }
+
+                        .plyr--full-ui, .plyr {
+                            border: none !important;
+                            outline: none !important;
+                        }
+                    </style>
+                <div id="iframePlayerContainer" style="display:none; width:100%; height:100%; background:#000;"></div>
+                <iframe id="embedPlayer" 
+                        style="display:none; width:100%; height:80vh; border:none;" 
+                        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                        allowfullscreen
+                        referrerpolicy="no-referrer">
+                </iframe>
+            </div>
+            <div id="progressBarContainer" style="height:4px; background:rgba(255,255,255,0.1);">
+                <div id="progressBarFill" style="height:100%; background:var(--accent); width:0%; transition:width 0.5s;"></div>
+            </div>
+            </div>
+        </div>
+    </div>
+
+      <script src="js/app.js?v=15.5"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            // ─── ANTI-LOOP GUARD ─────────────────────────────────────────────
+            // Capturar ANTES del registro si ya existía un controlador activo.
+            // Si no había → es primera instalación o reinstalación post-nuclear.
+            // En ambos casos NO mostrar toast ni recargar.
+            const hadController = !!navigator.serviceWorker.controller;
+            const isNuclear    = sessionStorage.getItem('sw_nuclear') === '1';
+            let refreshing     = sessionStorage.getItem('sw_refreshing') === '1';
+
+            // Limpiar flag nuclear inmediatamente (solo vale una vez)
+            if (isNuclear) sessionStorage.removeItem('sw_nuclear');
+
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                // Si viene de refresh nuclear o es primera instalación → silencio total
+                if (isNuclear || !hadController) {
+                    console.log('[SW] Primera instalación / post-nuclear — sin toast.');
+                    return;
+                }
+                // Si ya recargamos una vez en esta sesión → limpiar y salir
+                if (refreshing) {
+                    sessionStorage.removeItem('sw_refreshing');
+                    return;
+                }
+                // Actualización real: mostrar toast UNA sola vez
+                if (navigator.serviceWorker.controller) {
+                    refreshing = true;
+                    sessionStorage.setItem('sw_refreshing', '1');
+                    console.log('[SW] Actualización real activada — recargando una vez.');
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            title: '✅ GalixMovie Actualizado',
+                            text: 'Nueva versión instalada correctamente.',
+                            timer: 1800,
+                            showConfirmButton: false,
+                            background: '#0f172a',
+                            color: '#fff',
+                            icon: 'success'
+                        });
+                    }
+                    setTimeout(() => window.location.reload(), 1800);
+                }
+            });
+
+            navigator.serviceWorker.register('sw.js')
+                .then(reg => console.log('[SW] Registrado.'))
+                .catch(err => console.warn('[SW] Error:', err));
+        }
+
+
+        // 🖥️ Scroll horizontal con arrastre de mouse (Drag-to-Scroll)
+        window.initGridScrolling = function(grid) {
+            if (!grid || grid.dataset.scrollingInit) return;
+            grid.dataset.scrollingInit = "true";
+
+            // DESPLAZAMIENTO POR ARRASTRE DE MOUSE (DRAG-TO-SCROLL)
+            let isDown = false;
+            let startX;
+            let scrollLeft;
+
+            grid.addEventListener('mousedown', (e) => {
+                isDown = true;
+                startX = e.pageX - grid.offsetLeft;
+                scrollLeft = grid.scrollLeft;
+            });
+
+            grid.addEventListener('mouseleave', () => {
+                isDown = false;
+                grid.classList.remove('grabbing');
+            });
+
+            grid.addEventListener('mouseup', () => {
+                isDown = false;
+                grid.classList.remove('grabbing');
+            });
+
+            grid.addEventListener('mousemove', (e) => {
+                if (!isDown) return;
+                const x = e.pageX - grid.offsetLeft;
+                const dist = x - startX;
+                
+                // Solo considerarlo arrastre (drag) si se mueve más de 5 píxeles
+                if (Math.abs(dist) > 5) {
+                    grid.classList.add('grabbing');
+                    e.preventDefault();
+                    const walk = dist * 1.8; // Velocidad de arrastre de 1.8x
+                    grid.scrollLeft = scrollLeft - walk;
+                }
+            });
+        };
+
+        // Inicializar los grids existentes en la carga
+        document.querySelectorAll('.movie-grid').forEach(grid => window.initGridScrolling(grid));
+
+        function escHtml(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        // 🗑️ DHARMA CLEANUP: Limpiar catálogo de archivos eliminados
+        window.runCleanup = async function() {
+            try {
+                // ── 1. PREVIEW ───────────────────────────────────────
+                Swal.fire({
+                    title: 'Analizando archivos huérfanos...',
+                    allowOutsideClick: false,
+                    background: '#0f172a',
+                    didOpen: () => Swal.showLoading()
+                });
+
+                const prevRes = await fetch('backend/cleanup.php?preview=1&v=' + Date.now());
+                const prevData = await prevRes.json();
+
+                if (prevData.status !== 'success') {
+                    Swal.fire({ icon: 'error', title: 'Error', text: prevData.message || 'Error al analizar', background: '#0f172a', color: '#fff' });
+                    return;
+                }
+
+                if (prevData.cleaned === 0) {
+                    let msg = '✅ Todo en orden. No se encontraron archivos huérfanos.';
+                    if (prevData.renamed > 0) msg += `<br>🔄 ${prevData.renamed} archivos renombrados intactos.`;
+                    await Swal.fire({ icon: 'info', title: 'Sin novedades', html: msg, background: '#0f172a', color: '#fff', confirmButtonColor: '#10b981' });
+                    return;
+                }
+
+                // ── 2. MOSTRAR LISTA ─────────────────────────────────
+                let listHtml = `<div style="text-align:left;max-height:250px;overflow-y:auto;margin:10px 0;">`;
+                prevData.cleaned_list.forEach(m => {
+                    listHtml += `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:0.85rem;color:#f87171;">🗑️ ${escHtml(m.titulo)}</div>`;
+                });
+                listHtml += `</div>`;
+                if (prevData.renamed > 0) {
+                    listHtml += `<div style="font-size:0.78rem;color:#64748b;margin-top:6px;">🔄 ${prevData.renamed} archivos renombrados intactos (no se eliminan)</div>`;
+                }
+
+                const confirm = await Swal.fire({
+                    title: `Se eliminarán ${prevData.cleaned} archivos`,
+                    html: listHtml,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: '✅ Sí, eliminar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#ef4444',
+                    background: '#0f172a',
+                    color: '#fff',
+                    width: '500px',
+                });
+                if (!confirm.isConfirmed) return;
+
+                // ── 3. EJECUTAR ──────────────────────────────────────
+                Swal.fire({
+                    title: 'Eliminando...',
+                    allowOutsideClick: false,
+                    background: '#0f172a',
+                    didOpen: () => Swal.showLoading()
+                });
+
+                const res = await fetch('backend/cleanup.php?v=' + Date.now());
+                const data = await res.json();
+
+                if (data.status !== 'success') {
+                    Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Error al limpiar', background: '#0f172a', color: '#fff' });
+                    return;
+                }
+
+                let msg = '';
+                if (data.cleaned > 0) msg += `🎯 <strong>${data.cleaned}</strong> películas eliminadas del catálogo.<br>`;
+                if (data.renamed > 0) msg += `🔄 <strong>${data.renamed}</strong> archivos renombrados intactos.<br>`;
+                if (data.cleaned === 0 && data.renamed === 0) msg = '✅ Todo en orden. No se encontraron archivos huérfanos.';
+
+                await Swal.fire({
+                    title: 'Limpieza completada',
+                    html: msg + '<br><span style="color:#64748b;font-size:0.8rem;">Recargando catálogo...</span>',
+                    icon: data.cleaned > 0 ? 'success' : 'info',
+                    background: '#0f172a',
+                    color: '#fff',
+                    confirmButtonColor: '#10b981',
+                    timer: 2000,
+                    timerProgressBar: true,
+                });
+
+            } catch (e) {
+                Swal.fire({ icon: 'error', title: 'Error de conexión', text: e.message, background: '#0f172a', color: '#fff' });
+            }
+
+            window.location.href = window.location.pathname + '?v=' + Date.now();
+        };
+
+        // 🛡️ DHARMA FIX #45: Hard Refresh Nuclear — Purga total de SW, Caches y Storage
+        window.hardRefresh = async function() {
+            try {
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map(r => r.unregister()));
+                }
+            } catch (e) { console.warn('[HardRefresh] SW unregister:', e); }
+
+            try {
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map(name => caches.delete(name)));
+                }
+            } catch (e) { console.warn('[HardRefresh] Cache cleanup:', e); }
+
+            try { localStorage.clear(); } catch (e) {}
+            try { sessionStorage.clear(); } catch (e) {}
+
+            sessionStorage.setItem('sw_nuclear', '1');
+            window.location.href = window.location.pathname + '?v=' + Date.now();
+        };
+    </script>
+</body>
+</html>

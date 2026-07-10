@@ -1,0 +1,16 @@
+
+#296 (2026-06-29) — Fix apply por path en vez de índice
+- runApply() ahora acepta filePaths[] enviado desde preview
+- Match de archivos por path absoluto (no por índice secuencial)
+- Fallback legacy si no se envían paths
+- Frontend recolecta results[].path y lo envía en file_paths
+
+#297 (2026-06-29) — S1 icon para series en admin
+- get_content.php: para series, pobla archivo_path/server2-5 desde el primer episodio con ruta
+- El S1 del admin ahora muestra el icono aunque la serie no tenga peliculas_metadata
+
+#298 (2026-06-29) — Cache HLS en stream.php para GDrive
+- ?id= handler para GDrive m3u8: cache en hls_temp/{dir}/playlist.m3u8
+- ?file= handler: cache de .ts en hls_temp/seg_cache/{hash}
+- Proxy de .ts via nginx :8080/gdrive/ (cache 10min) en vez de rclone directo
+- Pre-warming: primeros 5 segmentos descargados en background tras playlist

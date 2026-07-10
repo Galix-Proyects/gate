@@ -1,0 +1,115 @@
+<?php
+/**
+ * GalixMovie - Cleanup de Catálogo
+ * ────────────────────────────────────────────────
+ * Busca entries en DB cuyo archivo local ya no existe en disco
+ * y las marca is_online = 0 + limpia historial (continue watching).
+ * No requiere auth (público, solo lectura/limpieza).
+ */
+error_reporting(0);
+require 'db.php';
+header('Content-Type: application/json');
+
+$localBase = __DIR__ . '/..';
+define('MEDIA_DIR', realpath(__DIR__ . '/../media') ?: (__DIR__ . '/../media'));
+
+/**
+ * Escaneo de archivos (misma lógica que scrapper.php)
+ */
+function scanMedia(string $dir): array {
+    $exts = ['mp4', 'mkv', 'avi', 'mov', 'webm'];
+    $results = [];
+    if (!is_dir($dir)) return $results;
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+    foreach ($files as $f) {
+        if (!$f->isFile()) continue;
+        $basename = $f->getBasename();
+        if (str_starts_with($basename, '._')) continue;
+        if (!in_array(strtolower($f->getExtension()), $exts)) continue;
+        $p = realpath($f->getPathname()) ?: $f->getPathname();
+        $results[] = ['path' => $p, 'name' => $f->getBasename('.' . $f->getExtension())];
+    }
+    return $results;
+}
+
+try {
+    $diskFiles = scanMedia(MEDIA_DIR);
+    $diskNames = [];
+    foreach ($diskFiles as $df) {
+        $diskNames[$df['name']] = $df['path'];
+    }
+
+    // Obtener todas las entries de DB con archivo local
+    $stmt = $pdo->query("SELECT c.id, c.tmdb_id, c.titulo, c.tipo, pm.archivo_path
+                         FROM contenido c
+                         JOIN peliculas_metadata pm ON pm.contenido_id = c.id
+                         WHERE c.is_online = 1
+                           AND pm.archivo_path IS NOT NULL AND pm.archivo_path != ''
+                           AND pm.archivo_path NOT LIKE 'http%'
+                           AND pm.archivo_path NOT LIKE 'extract:%'
+                           AND pm.archivo_path NOT LIKE 'sniper:%'
+                           AND pm.archivo_path NOT LIKE 'backend/%'
+                           AND pm.archivo_path NOT LIKE 'gdrive:%'");
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $isPreview = isset($_GET['preview']) && $_GET['preview'] == '1';
+
+    $cleaned     = 0;
+    $renamed     = 0;
+    $errors      = [];
+    $cleanedList = [];
+
+    foreach ($rows as $row) {
+        $archivoPath = trim($row['archivo_path'] ?? '');
+        if (empty($archivoPath)) continue;
+
+        // Normalizar path
+        $fullPath = $archivoPath;
+        if (!str_starts_with($archivoPath, '/')) {
+            $fullPath = $localBase . '/' . $archivoPath;
+        }
+        $fullPath = realpath($fullPath) ?: $fullPath;
+
+        // 1. Verificar si el archivo existe en su path original
+        if (file_exists($fullPath)) continue;
+
+        // 2. Verificar si existe con el MISMO NOMBRE en scanMedia (renombrado/movido)
+        $dbName = pathinfo($archivoPath, PATHINFO_FILENAME);
+        if (isset($diskNames[$dbName])) {
+            $renamed++;
+            continue;
+        }
+
+        // 3. No existe en disco de ninguna forma
+        $cleanedList[] = ['id' => $row['id'], 'titulo' => $row['titulo']];
+        $cleaned++;
+
+        // Solo escribir en DB si NO es preview
+        if ($isPreview) continue;
+
+        try {
+            // Limpiar continue watching
+            $delHist = $pdo->prepare("DELETE FROM historial WHERE contenido_id = ?");
+            $delHist->execute([$row['id']]);
+
+            // Marcar offline en catálogo público
+            $upd = $pdo->prepare("UPDATE contenido SET is_online = 0 WHERE id = ?");
+            $upd->execute([$row['id']]);
+        } catch (Exception $e) {
+            $errors[] = ['id' => $row['id'], 'titulo' => $row['titulo'], 'error' => $e->getMessage()];
+        }
+    }
+
+    echo json_encode([
+        'status'        => 'success',
+        'preview'       => $isPreview,
+        'cleaned'       => $cleaned,
+        'cleaned_list'  => $cleanedList,
+        'renamed'       => $renamed,
+        'total_checked' => count($rows),
+        'errors'        => $errors,
+    ], JSON_UNESCAPED_UNICODE);
+
+} catch (Exception $e) {
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+}

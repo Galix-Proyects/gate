@@ -1,0 +1,191 @@
+<?php
+error_reporting(0);
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
+header('Access-Control-Allow-Headers: Range, If-Range, Content-Type');
+header('Access-Control-Expose-Headers: Content-Length, Content-Range, Accept-Ranges');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
+require 'db.php';
+
+// --- HLS streaming ---
+if (isset($_GET['hls']) && $_GET['hls'] == '1' && isset($_GET['path'])) {
+    $hlsPath = $_GET['path'];
+    if (strpos($hlsPath, '..') !== false) {
+        http_response_code(403);
+        exit;
+    }
+    $localBase = __DIR__ . '/..';
+    $fullPath = $localBase . '/media/' . ltrim($hlsPath, '/');
+    if (!file_exists($fullPath)) {
+        $fullPath = '/data/data/com.termux/files/home/Proyectos/01_PROYECTOS/GalixMovie/media/' . ltrim($hlsPath, '/');
+    }
+    if (!file_exists($fullPath)) {
+        http_response_code(404);
+        echo json_encode(['error' => 'HLS file not found']);
+        exit;
+    }
+    $ext = strtolower(pathinfo($fullPath, PATHINFO_EXTENSION));
+    if ($ext === 'm3u8' || $ext === 'm3u') {
+        header('Content-Type: application/vnd.apple.mpegurl');
+    } elseif ($ext === 'ts') {
+        header('Content-Type: video/MP2T');
+    } else {
+        header('Content-Type: text/plain');
+    }
+    header('Content-Length: ' . filesize($fullPath));
+    header('Cache-Control: no-cache');
+    readfile($fullPath);
+    exit;
+}
+
+// --- Video streaming by ID ---
+$id = $_GET['id'] ?? null;
+if (!$id || !is_numeric($id)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'ID requerido']);
+    exit;
+}
+$id = (int)$id;
+$season = isset($_GET['season']) ? (int)$_GET['season'] : null;
+$episode = isset($_GET['episode']) ? (int)$_GET['episode'] : null;
+
+$filePath = null;
+$fileSize = null;
+
+try {
+    if ($season !== null && $episode !== null) {
+        $st = $pdo->prepare("SELECT archivo_path FROM series_metadata WHERE contenido_id = ? AND temporada = ? AND episodio = ? LIMIT 1");
+        $st->execute([$id, $season, $episode]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            $st = $pdo->prepare("SELECT archivo_path, file_size FROM peliculas_metadata WHERE contenido_id = ? AND season = ? AND episode = ? LIMIT 1");
+            $st->execute([$id, $season, $episode]);
+            $row = $st->fetch(PDO::FETCH_ASSOC);
+        }
+        if ($row) {
+            $filePath = $row['archivo_path'];
+            $fileSize = $row['file_size'] ?? null;
+        }
+    } else {
+        $st = $pdo->prepare("SELECT archivo_path, file_size FROM peliculas_metadata WHERE contenido_id = ? LIMIT 1");
+        $st->execute([$id]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            $filePath = $row['archivo_path'];
+            $fileSize = $row['file_size'] ?? null;
+        }
+    }
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Error en BD']);
+    exit;
+}
+
+if (!$filePath) {
+    http_response_code(404);
+    echo json_encode(['error' => 'Archivo no encontrado']);
+    exit;
+}
+
+// Handle gdrive: URLs via rclone HTTP proxy
+if (strpos($filePath, 'gdrive:') === 0) {
+    $gdrivePath = substr($filePath, 7);
+    $gdriveUrl = 'http://127.0.0.1:9091/' . ltrim($gdrivePath, '/');
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $gdriveUrl);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_BUFFERSIZE, 524288);
+
+    $rangeHeader = $_SERVER['HTTP_RANGE'] ?? '';
+    $reqHeaders = ['User-Agent: GalixMovie-Roku/1.0'];
+    if ($rangeHeader) {
+        $reqHeaders[] = 'Range: ' . $rangeHeader;
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $reqHeaders);
+        curl_setopt($ch, CURLOPT_RANGE, $rangeHeader);
+    } else {
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $reqHeaders);
+    }
+
+    curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($curl, $data) {
+        echo $data;
+        return strlen($data);
+    });
+    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $headerLine) {
+        $trimmed = trim($headerLine);
+        if ($trimmed === '') return strlen($headerLine);
+        if (preg_match('/^HTTP\//', $trimmed)) return strlen($headerLine);
+        if (stripos($trimmed, 'Transfer-Encoding') !== false) return strlen($headerLine);
+        header($trimmed);
+        return strlen($headerLine);
+    });
+
+    curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($httpCode === 0) {
+        http_response_code(502);
+        echo json_encode(['error' => 'Error conectando con rclone']);
+    }
+    exit;
+}
+
+// Local file serving
+if (!file_exists($filePath)) {
+    http_response_code(404);
+    echo json_encode(['error' => 'Archivo local no encontrado']);
+    exit;
+}
+
+if (!$fileSize) {
+    $fileSize = filesize($filePath);
+}
+
+$mimeType = mime_content_type($filePath) ?: 'video/mp4';
+
+$range = $_SERVER['HTTP_RANGE'] ?? '';
+if ($range && preg_match('/bytes=(\d*)-(\d*)/', $range, $matches)) {
+    $start = $matches[1] !== '' ? (int)$matches[1] : 0;
+    $end = $matches[2] !== '' ? (int)$matches[2] : $fileSize - 1;
+    if ($start > $end || $start >= $fileSize) {
+        http_response_code(416);
+        header('Content-Range: bytes */' . $fileSize);
+        exit;
+    }
+    http_response_code(206);
+    header('Content-Range: bytes ' . $start . '-' . $end . '/' . $fileSize);
+    header('Content-Length: ' . ($end - $start + 1));
+} else {
+    http_response_code(200);
+    header('Content-Length: ' . $fileSize);
+}
+
+header('Content-Type: ' . $mimeType);
+header('Accept-Ranges: bytes');
+header('Cache-Control: no-cache');
+
+if ($range && isset($start, $end)) {
+    $fp = fopen($filePath, 'rb');
+    if ($fp) {
+        fseek($fp, $start);
+        $toSend = $end - $start + 1;
+        $chunkSize = 524288;
+        while ($toSend > 0 && !feof($fp)) {
+            $read = min($chunkSize, $toSend);
+            $data = fread($fp, $read);
+            if ($data === false) break;
+            echo $data;
+            $toSend -= strlen($data);
+            flush();
+        }
+        fclose($fp);
+    }
+} else {
+    readfile($filePath);
+}
