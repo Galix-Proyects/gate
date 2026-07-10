@@ -1200,6 +1200,52 @@ Swal.fire('Error Fatal', 'No se pudo conectar con el motor Faro.', 'error');
 }
 }
 
+async function exportCatalog() {
+    const toast = Swal.fire({
+        title: 'Publicando catálogo...',
+        html: 'Exportando metadatos + backdrops a GitHub Pages...',
+        allowOutsideClick: false,
+        background: '#0f172a',
+        color: '#f1f5f9',
+        didOpen: () => { Swal.showLoading(); }
+    });
+
+    try {
+        const res = await fetch('backend/export_catalog.php');
+        const data = await res.json();
+        if (data.status === 'success') {
+            Swal.fire({
+                title: '¡Catálogo Publicado!',
+                html: `<div style="text-align:left;">
+                    <p>📦 ${data.movies} películas</p>
+                    <p>🖼️ ${data.backdrops} backdrops nuevos</p>
+                    <p style="color:#64748b;font-size:0.8rem;margin-top:8px;">Git: OK</p>
+                </div>`,
+                icon: 'success',
+                background: '#0f172a',
+                color: '#f1f5f9',
+                confirmButtonColor: '#10b981'
+            });
+        } else {
+            Swal.fire({
+                title: 'Error',
+                text: data.message || 'Error desconocido',
+                icon: 'error',
+                background: '#0f172a',
+                color: '#f1f5f9'
+            });
+        }
+    } catch (err) {
+        Swal.fire({
+            title: 'Error de Red',
+            text: err.message,
+            icon: 'error',
+            background: '#0f172a',
+            color: '#f1f5f9'
+        });
+    }
+}
+
 // ─── DHARMA #GDRIVE: Sincronización Global de Google Drive ────────────────
 // Escanea gdrive:HLS_TEST (o la carpeta que el usuario elija),
 // detecta todos los SxxEyy/playlist.m3u8, y los indexa automáticamente

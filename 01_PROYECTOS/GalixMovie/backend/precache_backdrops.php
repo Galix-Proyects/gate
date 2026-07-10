@@ -45,6 +45,15 @@ foreach ($rows as $row) {
 
     if ($httpCode === 200 && $imageData) {
         file_put_contents($cachePath, $imageData);
+
+        // Convert to WebP for GitHub Pages catalog
+        $webpDir = __DIR__ . '/../../../catalog/backdrops/';
+        if (!is_dir($webpDir)) mkdir($webpDir, 0755, true);
+        $webpPath = $webpDir . md5($filename) . '.webp';
+        if (!file_exists($webpPath)) {
+            shell_exec("cwebp -q 80 " . escapeshellarg($cachePath) . " -o " . escapeshellarg($webpPath) . " 2>/dev/null");
+        }
+
         $ok++;
         $label = substr($row['titulo'], 0, 30);
         echo "  [$ok/$total] OK ({$elapsed}ms): $label\n";
