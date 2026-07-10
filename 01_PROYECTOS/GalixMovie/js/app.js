@@ -424,32 +424,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadContent() {
         try {
+            const CATALOG_URL = 'https://galix-proyects.github.io/gate/catalog/catalog.json';
             const showHidden = isSecretUnlocked() ? '&show_hidden=1' : '';
-            const res = await fetch('backend/get_content.php?v=' + Date.now() + showHidden);
-            const data = await res.json();
+            let data = null;
+
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 3000);
+                const ghRes = await fetch(CATALOG_URL + '?v=' + Date.now(), { signal: controller.signal });
+                clearTimeout(timeout);
+                if (ghRes.ok) {
+                    const ghData = await ghRes.json();
+                    if (ghData.movies && ghData.movies.length > 0) {
+                        data = { status: 'success', movies: ghData.movies.map(m => ({
+                            ...m,
+                            poster_path: m.poster,
+                            backdrop_url: m.backdrop,
+                            backdrop_path: null
+                        })) };
+                    }
+                }
+            } catch (e) {
+                console.log('[Catalog] GitHub Pages no disponible, usando backend local');
+            }
+
+            if (!data) {
+                const res = await fetch('backend/get_content.php?v=' + Date.now() + showHidden);
+                data = await res.json();
+            }
+
             if (data.status === 'success' && data.movies.length > 0) {
-                // ─ DHARMA Fix #65: Separar contenido por género ─
                 allTVChannels = data.movies.filter(m => m.genero === 'tv_live');
                 allClasicas   = data.movies.filter(m => m.genero === 'clasica');
-                // Las películas normales excluyen TV y clásicos
                 allMovies = data.movies.filter(m => m.genero !== 'tv_live' && m.genero !== 'clasica');
 
-                // 🥚 Normalizar oculta a booleano real + marcar desde lista
                 allMovies = allMovies.map(m => {
                     m.oculta = !!(m.oculta == 1 || HIDDEN_TITLES.some(t => m.titulo && m.titulo.toLowerCase().includes(t.toLowerCase())));
                     return m;
                 });
 
-                // Hero: usar solo películas normales para el banner
                 if (allMovies.length > 0) {
                     const randomMovie = allMovies[Math.floor(Math.random() * allMovies.length)];
                     updateHero(randomMovie);
                 }
 
-                // Renderizar contenido principal
                 renderGrid(allMovies);
-
-                // ─ TV y Clásicos ya no se renderizan inline — se abren bajo demanda en modales
             }
         } catch (err) { console.error("Error cargando contenido:", err); }
     }
@@ -693,8 +712,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.showMovieDetails = async (movie) => {
         console.log("🎬 Sonda Telemetría: Mostrando Detalles de la película", movie);
+
+        if (movie.id && (!movie.archivo_path && (!movie.episodes || !movie.episodes[0] || !movie.episodes[0].archivo_path))) {
+            try {
+                const res = await fetch('backend/get_content.php?id=' + movie.id + '&v=' + Date.now());
+                const data = await res.json();
+                if (data.status === 'success' && data.movies.length > 0) {
+                    movie = data.movies[0];
+                }
+            } catch (e) {
+                console.warn('[Details] No se pudieron cargar detalles del servidor local');
+            }
+        }
         
-        // Disparar pre-cargador en background para aprovechar tiempos (DHARMA Ultra-Fast Preloader)
         window.preloadMovieSources(movie);
         const modal = document.getElementById('movieDetailsModal');
         if (!modal) return;
@@ -1065,8 +1095,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 5000);
     };
 
-    window.openPlayer = (movie, startEpisode = null) => {
+    window.openPlayer = async (movie, startEpisode = null) => {
         console.log("🎬 Sonda Telemetría: Abriendo Player");
+
+        if (movie.id && (!movie.archivo_path && (!movie.episodes || !movie.episodes[0] || !movie.episodes[0].archivo_path))) {
+            try {
+                const res = await fetch('backend/get_content.php?id=' + movie.id + '&v=' + Date.now());
+                const data = await res.json();
+                if (data.status === 'success' && data.movies.length > 0) {
+                    movie = data.movies[0];
+                }
+            } catch (e) {
+                console.warn('[Player] No se pudieron cargar detalles del servidor local');
+            }
+        }
+
         currentMovie = movie;
         const modal  = document.getElementById('playerModal');
         const player = document.getElementById('videoPlayer');

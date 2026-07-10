@@ -19,9 +19,15 @@ try {
     if (!is_dir($catalogDir)) mkdir($catalogDir, 0755, true);
     if (!is_dir($webpDir)) mkdir($webpDir, 0755, true);
 
+    $checkGenero = $pdo->query("SHOW COLUMNS FROM `contenido` LIKE 'genero'")->fetch();
+    $generoCol = $checkGenero ? ", c.genero" : ", NULL as genero";
+    $checkOculta = $pdo->query("SHOW COLUMNS FROM `contenido` LIKE 'oculta'")->fetch();
+    $ocultaCol = $checkOculta ? ", c.oculta" : ", 0 as oculta";
+
     $rows = $pdo->query("
         SELECT c.id, c.tipo, c.titulo, c.sinopsis, c.poster_path, c.backdrop_path,
                c.fecha_estreno, c.tmdb_id, c.puntuacion, c.created_at
+               {$generoCol} {$ocultaCol}
         FROM contenido c
         WHERE c.is_online = 1
         ORDER BY c.created_at DESC
@@ -66,16 +72,20 @@ try {
             }
         }
 
+        $backdropWebp = $backdropHash ? 'https://galix-proyects.github.io/gate/catalog/backdrops/' . md5(basename(parse_url($row['backdrop_path'], PHP_URL_PATH))) . '.webp' : null;
+
         $movie = [
             'id' => (int)$row['id'],
             'tipo' => $row['tipo'],
             'titulo' => $row['titulo'],
             'sinopsis' => $row['sinopsis'],
             'poster' => $row['poster_path'],
-            'backdrop' => $backdropHash ? '/catalog/backdrops/' . md5(basename(parse_url($row['backdrop_path'], PHP_URL_PATH))) . '.webp' : null,
+            'backdrop' => $backdropWebp,
             'fecha_estreno' => $row['fecha_estreno'],
             'tmdb_id' => (int)$row['tmdb_id'],
-            'puntuacion' => $row['puntuacion'] ? (float)$row['puntuacion'] : null
+            'puntuacion' => $row['puntuacion'] ? (float)$row['puntuacion'] : null,
+            'genero' => $row['genero'] ?? null,
+            'oculta' => $row['oculta'] ?? 0
         ];
 
         if ($row['tipo'] === 'series' && !isset($seenSeries[$row['id']])) {
