@@ -24,12 +24,15 @@ try {
     $checkOculta = $pdo->query("SHOW COLUMNS FROM `contenido` LIKE 'oculta'")->fetch();
     $ocultaCol = $checkOculta ? ", c.oculta" : ", 0 as oculta";
 
+    $checkVisibleRoku = $pdo->query("SHOW COLUMNS FROM `contenido` LIKE 'visible_roku'")->fetch();
+    $visibleRokuFilter = $checkVisibleRoku ? " AND c.visible_roku = 1" : '';
+
     $rows = $pdo->query("
         SELECT c.id, c.tipo, c.titulo, c.sinopsis, c.poster_path, c.backdrop_path,
                c.fecha_estreno, c.tmdb_id, c.puntuacion, c.created_at
                {$generoCol} {$ocultaCol}
         FROM contenido c
-        WHERE c.is_online = 1
+        WHERE c.is_online = 1{$visibleRokuFilter}
         ORDER BY c.created_at DESC
     ")->fetchAll(PDO::FETCH_ASSOC);
 
