@@ -1,0 +1,1 @@
+{"name": "NEURON Pro", "short_name": "NEURON", "start_url": "index.html", "display": "standalone", "background_color": "#020617", "theme_color": "#8b5cf6", "icons": [{ "src": "../icons/NEURON.png?v=2.2", "sizes": "512x512", "type": "image/png" }, { "src": "../logo.png?v=2.2", "sizes": "512x512", "type": "image/png" }]}
