@@ -1,0 +1,376 @@
+─────────────────────────────────
+
+1.- 2026-07-29 14:30:00
+    Instruccion Israel: La busqueda en el modulo Telegram tarda demasiado, se queda en "Buscando en canales y foros..." con la busqueda "proyecto"
+    Instruccion Antigravity: Optimización masiva del sistema de búsqueda.
+    
+    CAUSA RAIZ:
+    - `search_forums()` iteraba 200 forum_topic sources secuencialmente sin límite.
+    - No existía `search_global()` — se hacían cientos de llamadas API individuales.
+    - Google Translate sumaba ~4s de timeout de red por request.
+    - "proyecto" no estaba en diccionario de traducción.
+    - DB usaba LIKE %x% (full scan) sin FULLTEXT index.
+    - get_entity() se llamaba repetido para el mismo peer_id sin cache.
+    
+    CAMBIOS:
+    - Agregado search_global() usando messages.searchGlobal + InputMessagesFilterDocument
+      → UNA sola llamada API busca en todos los canales (~2-5s).
+    - Cache de entidades por peer_id (_get_entity_cached).
+    - search_forums() limitado a 10 topics (antes 200 sin limite).
+    - Eliminado Google Translate del search_videos.
+    - Timeouts reducidos: channels 120→45s, forums 60→30s, search_one 15→8s.
+    - FULLTEXT INDEX ft_search en forum_video_index(filename, caption).
+    - search_forum_index() ahora usa MATCH...AGAINST IN BOOLEAN MODE.
+    - Agregado "proyecto" al SPANISH_ENGLISH.
+    
+    ARCHIVOS:
+    - telegram_daemon/api_server.py
+    - telegram_daemon/db_handler.py
+    - telegram_daemon/downloader.py
+
+─────────────────────────────────
+
+2.- 2026-07-29 15:00:00
+    Instruccion Israel: Implementar busqueda en 2 fases, que busque desde el video mas antiguo al mas reciente
+    Instruccion Antigravity: Reestructuracion completa del search_videos.
+    
+    FASE 1 (siempre, ~3s):
+    - search_index(order='asc') + search_global() en paralelo
+    - search_global reemplaza a search_channels/search_forums (cubre historial completo)
+    - Resultados ordenados por fecha ascendente (mas antiguo primero)
+    - Timeout global reducido a 30s
+    
+    CAMBIOS:
+    - api_server.py: removidos search_channels/search_forums, solo search_index + search_global
+    - api_server.py: parametro order='asc'/'desc' desde frontend
+    - api_server.py: limit aumentado de 30 a 100 resultados
+    - db_handler.py: search_forum_index() acepta order='asc'|'desc'
+
+─────────────────────────────────
+
+3.- 2026-07-29 15:30:00
+    Instruccion Israel: Implementar backfill masivo de todos los canales (124) en forum_video_index
+    Instruccion Antigravity: Agregado sistema de backfill progresivo en background.
+    
+    ENDPOINTS NUEVOS:
+    - POST /backfill/channels → inicia backfill en background
+    - GET /backfill/status → { running, total, completed, indexed, errors, current_channel }
+    
+    LOGICA:
+    - Itera 124 fuentes tipo channel en downloader.backfill_all_channels()
+    - Por cada canal: paginacion completa (max_id decremental, limit=100, delay 3s)
+    - Por cada video: insert_forum_video() en forum_video_index
+    - Delay 10s entre canales para evitar flood wait
+    - Manejo de FloodWaitError con espera + 2s
+    - Entity cache por peer_id durante todo el backfill
+    - Estado visible en GET /backfill/status
+    
+    ARCHIVOS:
+    - telegram_daemon/downloader.py (+backfill_all_channels)
+    - telegram_daemon/api_server.py (+2 rutas backfill)
+
+─────────────────────────────────
+
+4.- 2026-07-29 20:00:00
+    Instruccion Israel: Búsqueda devuelve pocos resultados, falta cobertura FULLTEXT + LIKE combinado
+    Instruccion Antigravity: search_forum_index reescrito para combinar FULLTEXT + LIKE siempre.
+    
+    CAMBIOS:
+    - db_handler.py: search_forum_index() REESCRITO:
+      * Siempre ejecuta FULLTEXT exacto + FULLTEXT boolean + LIKE substring
+      * Resultados combinados y deduplicados por (peer_id, message_id)
+      * fetch_limit = max(limit*2, 100) para cada fase
+      * Orden final combinado por updated_at
+      * LIKE captura palabras cortas que FULLTEXT ignora (ft_min_word_len=4)
+    - api_server.py: search_index limit 100→200
+    - api_server.py: /forum/search limit 50→200
+    
+    BUGS CORREGIDOS:
+    - downloader.py: backfill loop infinito cuando max_id=0 → agregado if len(msgs) < 100: break
+    - downloader.py: resolve() prueba -100{peer_id} ANTES que peer_id desnudo para canales
+    
+    ARCHIVOS:
+    - telegram_daemon/downloader.py
+    - telegram_daemon/api_server.py
+    - telegram_daemon/db_handler.py
+
+─────────────────────────────────
+
+5.- 2026-07-29 23:00:00
+    Instruccion Israel: Búsqueda devuelve resultados irrelevantes con palabras cortas (yo, mi, el)
+    Instruccion Antigravity: search_forum_index reestructurado en 4 fases con orden de precisión.
+    
+    CAMBIOS:
+    - db_handler.py: search_forum_index() ahora ejecuta 4 fases en orden:
+      1. Frase exacta FULLTEXT ("query") → máximo precision
+      2. AND FULLTEXT (+palabra1 +palabra2) → todas las palabras deben coincidir
+      3. LIKE frase completa → substring exacto
+      4. LIKE términos individuales OR → SOLO si hay pocos resultados (< limit)
+    - Palabras >= 2 letras ahora incluidas en FULLTEXT
+    
+    MARIA DB:
+    - innodb_ft_min_token_size = 2
+    - ft_min_word_len = 2
+    - FULLTEXT INDEX rebuild (DROP + ADD)
+    
+    RESULTADOS:
+    - "irene yo y mi otro yo" → 3 resultados (antes ~100 irrelevantes)
+    - "supergirl" → 132 resultados de todos los canales
+    - Palabras de 2 letras indexadas por FULLTEXT sin saturar resultados
+    
+    ARCHIVOS:
+    - telegram_daemon/db_handler.py
+    - /data/data/com.termux/files/usr/etc/my.cnf.d/ft_min.cnf
+
+#312 — DESCARGAS TELEGRAM: SOLO MANUAL + CARPETA PERSISTENTE (03-Ago 2026)
+    - SQL: all auto_download='manual' (0 descargas sin autorización)
+    - scan_interval_minutes: 60 → 120 (solo indexa, no descarga)
+    - js/app.js: _lastFolder persistente, _chooseFolder dedup, toasts de carpeta
+    - Daemon: restart OK (PID 19509, escanear cada 7200s, sesión Telethon OK)
+    - Nota: copia legacy Proyectos/GalixStreaming_PRO/ sin uso (nginx + start.sh usan 01_PROYECTOS/)
+
+#313 — EXPLORADOR DE CARPETAS: SIN 'USAR ESTA CARPETA' + ARCHIVOS EN GRID (03-Ago 2026)
+    - Descargar usa la carpeta navegada en vivo (folderInput/_lastFolder sincronizados en _browseTo)
+    - Explorador muestra archivos de video de la carpeta (backend/folders.php files + grid 3 col en style.css)
+    - Toast de destino al descargar; 'Usar esta carpeta' queda como opcional
+
+#314 — SIN 'USAR ESTA CARPETA' + CACHE v15/v8 (03-Ago 2026)
+    - Botón folderExplorerConfirm eliminado (redundante con #313); _chooseFolder y .folder-confirm removidos
+    - index.html: app.js?v=15 + style.css?v=15; sw.js: CACHE galixstream-v8
+
+#315 — FIX APÓSTROFOS EN TÍTULOS (That's Amorte) (03-Ago 2026)
+    - Handlers inline → data-attributes (cancelDownload, previewFromTitle, downloadTelegramVideo)
+    - app.js?v=16, sw.js v9
+
+#316 — RETIRO HDD_320GB + REINDEX local_content (09-10 Oct 2026)
+    - HDD_320GB desconectado 2026-10-04; retirado de código/DBs/catálogo 2026-10-09/10. Series migradas a HDD_1TB/SERIES3.
+    - galix_streaming.local_content: borradas 322 filas del 320GB → reindex completo a 1525 filas (max indexed_at 2026-10-09 23:59:34).
+    - Distribución post-reindex: HDD_1TB 1283 · HDD_1TB_B 202 · HDD_500GB 3 · BUNKER/DEBRID 36 · BUNKER/BACKUP 1.
+    - FIX backend/local.php (indexDirectory): RecursiveCallbackFilterIterator + @is_readable — el dir HDD_1TB_B/Montado sin permiso abortaba el scan con UnexpectedValueException.
+    - backend/config.php: LOCAL_HDD = STORAGE, HDD_500GB, HDD_1TB, HDD_1TB_B (sin 320).
+    - backend/folders.php: quitado 320 de ambos arrays (roots + default).
+    - Estado daemon :5050: forum_video_index = 246,131 videos / 167 foros; telegram_sources = 367; downloads completadas = 49.
+    - Docs: ONBOARDING v3.5, BLINDAJE (2026-10-10), DHARMA GS-023.
+    - Hallazgo: carpeta legacy DOCUMENTACION/PROYECTOS/GalixStreaming/ es OBSOLETA (no hay código en 01_PROYECTOS; sin Transmission/:9093).
+
+─────────────────────────────────
+
+#317 — INDEXADO MANUAL POR ARCHIVO EN LA COLA WEB + confirmar NO auto-indexado (11-Oct 2026)
+    Instrucción Israel: en la web (Cola) agregar botón para indexar manualmente cada archivo descargado,
+    con la misma UX del Admin de GalixMovie (nombre visible + cambiar nombre + preview + buscar + campo TMDB ID).
+
+    CONFIRMACIÓN (pregunta de Israel): el daemon YA NO indexa solo.
+    - config.json → auto_scrape = false. NO hay cron de scrapper.
+    - Al completar una descarga: solo avisa por Telegram con BOTÓN manual (ix|go / ix|ed / ix|sk).
+    - La web añade un SEGUNDO disparador manual: botón 🎯 por descarga completada en la Cola.
+    - Se indexa únicamente cuando el operador lo pide (Telegram o web).
+
+    BACKEND:
+    - NUEVO backend/index_file.php → api.php?action=index_file (POST {download_id|path, title, tmdb_id}):
+      * Valida que el path esté dentro de BUNKER y sea video; evita indexaciones concurrentes (pgrep php.*scrapper.php).
+      * Auto-detecta: si el archivo YA está en galix_movie (peliculas_metadata/series_metadata.archivo_path)
+        → FIX por ID (GALIX_FIX_ID + GALIX_FIX_TITLE/GALIX_FIX_YEAR/GALIX_FIX_TMDB);
+        si es nuevo → indexado dirigido (GALIX_ONLY_PATHS + GALIX_CUSTOM_TITLE/GALIX_TMDB_ID,
+        con GALIX_NO_FALLBACK=1 cuando no hay TMDB ID).
+      * Ejecuta scrapper.php (nice 19) capturando salida, timeout 180s → {success, mode, message, output}.
+    - backend/tmdb_preview.php: acepta &id=&tipo= (lookup exacto) además de &q= (search/multi).
+    - api.php: ruta 'index_file'.
+
+    DAEMON:
+    - db_handler.insert_download() + downloader._prepare_download() ahora guardan downloads.final_path
+      (antes quedaba NULL) → la Cola sabe qué archivo indexar por cada descarga. Requiere reinicio del daemon.
+    - Daemon reiniciado (PID 30142, auto_scrape:false).
+
+    FRONTEND:
+    - js/app.js renderQueueItem(): en descargas 'completed' con final_path agrega:
+      botón 🎯 "Indexar en GalixMovie" + panel con 📄 nombre, campo Nombre, campo TMDB ID (opcional),
+      🔍 Buscar (link TMDB), 🔍 Preview (modal) y ✅ Aplicar e indexar.
+    - style.css: .queue-index-bar / .index-panel / .index-name / .index-tmdb / .index-apply / .index-result.
+
+    TELEGRAM (acceso directo a la web):
+    - El aviso de descarga ahora incluye botón URL '🌐 Abrir en la web' →
+      {web_url}/?tab=queue&dl={download_id} (base en config.json → web_url).
+    - js/app.js: applyDeepLink() lee ?tab=&dl= tras el login → abre la Cola, resalta (banda verde +
+      animación) y expande el panel de indexado de esa descarga (data-dlid en .queue-item).
+    - index.html app.js?v=28, style.css?v=16; sw.js CACHE galixstream-v19.
+
+    PRUEBAS (11-Oct): indexado real dummy + TMDB 603 ("Matrix") en ~5s; preview exacto por ID (El Valiente 1009640);
+    rechazo de ruta fuera de BUNKER; limpieza de fila/archivo de prueba + catálogo reexportado (425 películas).
+    Deep link verificado: ?tab=queue&dl=671 abrió la Cola, resaltó la descarga y expandió su panel;
+    keyboard Telegram validado con botón '🌐 Abrir en la web'.
+    ARCHIVOS: backend/index_file.php (nuevo), api.php, backend/tmdb_preview.php, js/app.js, style.css, index.html, sw.js,
+              telegram_daemon/db_handler.py, telegram_daemon/downloader.py, telegram_daemon/config.json
+
+─────────────────────────────────
+
+#318 — RED DE SEGURIDAD DEL AVISO DE INDEXADO (no se pierde al reiniciar) (11-Oct 2026)
+    Problema: si el daemon se reiniciaba justo al terminar una descarga, el aviso "Nueva descarga lista
+    para indexar" se perdía (el proceso murió antes de enviarlo). Caso real: Practical Magic 2 (id 671).
+
+    SOLUCIÓN:
+    - downloads: nueva columna `index_notified_at` (migración en db_handler.init_schema; también ensure de final_path).
+    - _send_index_button(): marca index_notified_at SOLO si el sendMessage devolvió ok (si falla, no marca → reintenta).
+    - Downloader.resend_missing_index_notifications(): al arrancar el daemon (main_loop), busca descargas
+      'completed' de origen telegram con final_path y sin index_notified_at; reenvía el aviso.
+      Salta y marca (sin reenviar) si el archivo ya no existe (indexado/renombrado) o ya está en
+      galix_movie (peliculas_metadata/series_metadata.archivo_path).
+    - db_handler: mark_index_notified(), get_unnotified_completed_downloads(), is_indexed_in_catalog().
+
+    PRUEBA (11-Oct): fila completed con final_path a archivo real → reinicio → aviso reenviado (mid=45) y
+    index_notified_at marcado. Fila 671 (archivo renombrado) → marcada sin reenviar. Cleanup hecho (fila+archivo).
+    ARCHIVOS: telegram_daemon/db_handler.py, telegram_daemon/downloader.py, telegram_daemon/galix_telegram_daemon.py
+
+─────────────────────────────────
+
+#319 — AVISO OBSOLETO MUESTRA LA RESOLUCIÓN Y LA RUTA (no solo "expirado") (11-Oct 2026)
+    Problema: al pulsar un botón de indexado cuyo aviso YA se resolvió (o cuyo archivo se renombró/movió),
+    el poller editaba el mensaje a "⚠️ Este aviso ya expiró o el archivo ya no está." sin decir QUÉ pasó.
+
+    CAUSA (diagnóstico): no hay temporizador; el estado de cada aviso vive en TELEMETRY/telegram_pending.json
+    y el daemon purga en cada envío las entradas cuyo archivo ya no existe (downloader._queue_pending_entry).
+    Así, tras indexar/renombrar, la entrada desaparece y el token ya no se encuentra → mensaje genérico.
+
+    SOLUCIÓN:
+    - scrapper.php: emite marcador parseable `[SAVED 📁] <ruta_final>` en cada resolución (index OK, fallback,
+      baja confianza, renombre manual y fix). Expone la ruta REAL vía $GLOBALS['GALIX_LAST_SAVED_PATH'] porque
+      upsertContent/upsertFallbackContent renombran el archivo internamente sin actualizar el $video['path'] del llamador.
+    - telegram_fix_poller.php: nuevo historial TELEMETRY/telegram_index_log.json (mapa download_id → {action,
+      title, path, origin, at}; máx 500). logResolution() registra en las acciones del poller (indexed/renamed/ignored).
+      En el branch de token no encontrado, getResolution() reconstruye y muestra: acción + título + 📁 ruta + 🕒 fecha;
+      si no hay registro, mensaje más claro ("ya no está activo… revisa la Cola en la web").
+    - backend/index_file.php: al indexar desde la web, registra la resolución (action=indexed/renamed, título,
+      ruta final de [SAVED 📁], origin=web) con el mismo download_id que usa el botón de Telegram.
+
+    PRUEBA (11-Oct, dummy + TMDB 76341): web → log {"action":"indexed","path":"…/Mad Max Furia en el camino (2015).mp4",
+    "origin":"web"}. Sonda del poller (getUpdates/offset neutralizados) sobre token 999001 → mensaje:
+    "✅ Ya se indexó (desde la web): 🎬 Mad Max: Furia en el camino / 📁 Guardado en: <ruta> / 🕒 …". php -l OK.
+    Cleanup total (contenido/metadata/archivos/log/mensajes) y catálogo reexportado (426).
+    ARCHIVOS: GalixMovie/backend/scrapper.php, 00_SISTEMA/_Poderes/telegram_fix_poller.php,
+              GalixStreaming_PRO/backend/index_file.php
+
+#320 — PANEL DE INDEXADO WEB: TMDB ID PRIORITARIO + SELECTOR DE CANDIDATOS + PREVIEW ARREGLADO (11-Oct 2026)
+    Petición (4 puntos): (1) al escribir el nombre correcto, cargar el TMDB ID; (2) que "🔍 Buscar" abra
+    la búsqueda de TMDB con el nombre del campo; (3) arreglar "🔍 Preview" (el modal no cargaba); (4) que
+    TODO se defina por el TMDB ID (nombre + año; ej. ID 1009640 → "El Valiente (2025)").
+
+    CAUSA del Preview: #tmdbPreviewModal estaba DENTRO de <section id="tab-telegram">, cuya regla .tab
+    { display:none } lo ocultaba al estar en la pestaña Cola (el backdrop/close listeners sí están a nivel
+    de DOM, telegram.js:initTelegram).
+
+    SOLUCIÓN:
+    - index.html: #tmdbPreviewModal movido fuera de #tab-telegram, a nivel <body> (tras </main>, antes de
+      #renameModal). Ahora el modal se muestra desde cualquier pestaña.
+    - backend/tmdb_preview.php reescrito: helper tmdb_fetch_json(); rama `id` prueba el tipo pedido y luego
+      el alterno (movie↔tv) y devuelve media_type; búsqueda omite personas; nuevo param `list=1` → hasta 8
+      candidatos {tmdb_id,title,year,media_type,poster}.
+    - js/app.js (panel .index-panel): .index-name con oninput/onblur → indexResolveName (búsqueda list=1 y,
+      si hay >1 resultado, renderiza botones .index-candidate para elegir por TMDB ID; autoselecciona si hay 1).
+      .index-tmdb con onblur → indexResolveTmdbId: acepta ID numérico, URL de TMDB (…/movie/… o …/tv/…) o
+      prefijo "tv|movie|serie N"; guarda el tipo en panel.dataset.tmdbTipo; ante colisión de ID (movie y tv
+      comparten número) consulta ambos y desambigua por mejor match con el nombre del campo. indexPickCandidate
+      fija tmdb_id + nombre canónico y abre el Preview. previewIndexTmdb usa el tipo resuelto del panel.
+    - .index-search ahora es un <a href="#" onclick="indexOpenSearch(this)"> dinámico: abre
+      themoviedb.org/search?query=<valor del campo nombre>.
+    - style.css: .index-candidates / .index-candidate (lista de elección). Cache: app.js v=31, style.css v=17,
+      sw.js galixstream-v21.
+
+    PRUEBA (11-Oct, Cola item 671, Playwright): "El Valiente" → 8 candidatos → elegir 1009640 → nombre
+    "El Valiente (2025)" + tmdb 1009640 + Preview muestra "El Valiente / 📅 2025 / ⭐ 6.666 / sinopsis".
+    ID 15804 → desambigua a tv "Batman, el Valiente (2008)"; URL /tv/15804 → tipo tv; 1009640 → movie.
+    "Buscar" abre search?query=El%20Valiente%20(2025).
+    ARCHIVOS: GalixStreaming_PRO/index.html, backend/tmdb_preview.php, js/app.js, style.css, sw.js
+
+─────────────────────────────────
+
+#321 — SESIÓN TELETHON CORRUPTA + RE-LOGIN (código + 2FA) + ENDURECIMIENTO DEL DAEMON (18-Oct 2026)
+    Instrucción Israel: arreglar el daemon de GalixStreaming (cayó y la web no mostraba datos).
+
+    CAUSA RAIZ (cadena):
+    - session/galix.session (SQLite de Telethon) CORRUPTA → "database disk image is malformed"
+      al crear TelegramClient en start_client() → daemon crashea al arrancar
+      (traceback L285 asyncio.run(main) → L278 start_client → L86 TelegramClient).
+    - Se recuperó con `sqlite3 .recover` (integrity ok, auth_key 256B, dc_id=1, 391 entities) PERO
+      al reconectar → Telegram devolvió AuthKeyDuplicatedError → key QUEMADA
+      (mismo patrón del 2026-10-11 ya documentado en start_daemon.sh: dos instancias con el mismo
+      galix.session desde IPs distintas).
+    - HALLAZGO: TODAS las copias de galix.session (burned 11/13/18 + copia en BASURA_2026-10-09)
+      comparten la MISMA auth_key (md5 429c1c465f7d) → no hay sesión reutilizable → re-login obligatorio.
+
+    RE-LOGIN:
+    - El código llega como SentCodeTypeApp (dentro de la app de Telegram, NO SMS); force_sms deprecado.
+    - Telegram aplicó rate-limit de entrega ("all available options already used", ResendCode) →
+      los códigos de 13:16/13:23/13:25 no llegaron. Se dejó de enviar (cada intento reinicia el bloqueo),
+      se esperó el cooldown y a las 13:53 se hizo UN solo SendCode.
+    - Código 70059 → POST /auth/code → 2FA_REQUIRED → contraseña 2FA → POST /auth/2fa → {"success":true}
+      (log "2FA completado: 524531563493"). /auth/status → authenticated:true.
+    - Verificación: scan 371 fuentes sin "The key is not registered in the system"; búsqueda viva OK (q=avatar).
+
+    CAMBIOS (sintaxis validada py_compile / php -l):
+    - _start_daemon.php L7 → $startScript = start_daemon.sh (arranque endurecido instancia-única).
+    - galix_telegram_daemon.py::start_client → try/except: si error malformed/database, renombra la
+      sesión a .corrupt-<ts> y recrea (auto-recuperación, no crash).
+    - api_server.py::health → nuevo campo auth_status (lee .auth_required).
+    - api_server.py::submit_2fa → faltaba el `return jsonify(result), status_code` (2FA no respondía) → FIX.
+    - Log del daemon ahora incluye el tipo de código (tipo: SentCodeTypeApp).
+    - NUEVO telegram_daemon/login_helper.py (status|send|sign|2fa) para re-login por CLI.
+      REGLA: no correrlo junto al daemon (dos clientes sobre la misma sesión → AuthKeyDuplicated).
+
+    RESPALDOS DE SESIÓN: galix.session.good-20261018_135702 (nueva, integrity ok),
+      .burned-20261018_130506, .corrupt-20261018_130329, .burned-20261011_223750, .burned-20261013_095040,
+      recover_20261018_130329.sql.
+
+    DATOS (DB galix_streaming, hoy): local_content=1571 (HDD_1TB 1293 · HDD_1TB_B 226 · DEBRID 36 ·
+      HDD_500GB 15 · BACKUP 1; max indexed_at 2026-10-16 08:21:47); forum_video_index=251,832;
+      telegram_sources=379; downloads=2.
+    RIESGO: NO clonar galix.session a otra máquina/IP; aislar el otro dispositivo que usaba la key vieja.
+    ARCHIVOS: telegram_daemon/galix_telegram_daemon.py, telegram_daemon/api_server.py,
+              telegram_daemon/login_helper.py (nuevo), _start_daemon.php, session/ (respaldos)
+
+─────────────────────────────────
+
+#322 — VERIFICACIÓN DE COMPATIBILIDAD ROKU SIN DESCARGAR (4º botón 📺) (18-Oct 2026)
+    Instrucción Israel: en la lista de resultados de video, un 4º botón (📺) que verifique si el
+    archivo es compatible con RokuStick (MP4/H.264/AAC) SIN descargarlo; badge ✅/❌/⚠️ al lado.
+    Decisiones: sondeo cabeza+cola (~3MB+8MB), SOLO AVISAR (no bloquea la descarga), solo en la lista
+    de resultados (búsqueda rápida y profunda).
+
+    BACKEND (daemon):
+    - FastTelethon.py::download_range(client, location, offset, limit, out) — NUEVO. Baja un rango
+      binario vía GetFileRequest. CLAVE: el offset se alinea HACIA ABAJO a 1 MiB (tamaño de parte) y
+      cada request manda limit = EXACTAMENTE 1 MiB (el server recorta el último chunk en EOF); loop
+      while position<end con GetFileRequest(offset=position, limit=PART=1MiB); break si len(data)<PART.
+    - downloader.py (import download_range):
+      * _mp4_mdat_end(path, max_read=8MB): recorre las cajas MP4 (size+type big-endian) y devuelve el
+        offset de FIN de mdat → permite traer justo la zona del moov aunque esté al final.
+      * check_roku(client, link_text, head_bytes=3MB, tail_bytes=8MB): parsea el enlace (peer_id
+        -100…, message_id), obtiene el documento; si es chico lo baja completo; si es grande baja
+        cabeza (3MB) + cola. tail_off = _mp4_mdat_end(head) or max(0,size-tail_bytes), alineado abajo
+        a 1 MiB y clamp a size; sparse; _run_roku_probe(script,path).
+      * _run_roku_probe() usa el script OFICIAL 00_SISTEMA/_Poderes/roku_compat_check.sh (respeta
+        ROKU_PROBESIZE; el daemon exporta 10000000). _roku_cache / _roku_cache_ttl (600s).
+    - api_server.py: NUEVO POST /check_roku.
+    - backend/telegram.php: 'roku_check' => ['path'=>'/check_roku','method'=>'POST'] (vía ?tg=roku_check).
+    - js/telegram.js: botón 📺 + <span class="tg-roku-badge"> en los renderers quick (~L69) y deep
+      (~L177); checkRoku(btn) (L206) → POST a la API; renderRokuBadge(btn,data) (L231).
+      style.css: .tg-btn-roku/.tg-roku-badge/.ok/.bad/.warn (L1678–1710). index.html: telegram.js?v=28
+
+    BUG ENCONTRADO Y CORREGIDO: Telegram devolvía "The given offset was invalid, it must be divisible
+    by 1KB" y "An invalid limit was provided". Alinear a 1024/4096 NO basta: hay que alinear el offset
+    a 1 MiB (tamaño de parte) y mandar limit=1 MiB por request.
+
+    PRUEBAS (suite directa POST http://127.0.0.1:5050/check_roku con https://t.me/c/3815437360/<msg>):
+    - msg 3  (Miraculous, mpeg4)          → {compatible:false, reasons:["video:mpeg4"], probe_bytes:3145728}
+    - msg 20 (P1noCh0Mazze.mkv)           → {compatible:false, reasons:["container:mkv"], probe_bytes:3145728}
+    - msg 9  (Five Nights, moov al final) → {compatible:true, h264/aac, probe_bytes:8582180}
+    - msg 11 (Super Mario 2.05GB)         → {compatible:true, h264/aac, probe_bytes:12092797}
+    - msg 13 (Bob Esponja 993MB)          → {compatible:true, h264/aac, probe_bytes:12177840}
+    - Repetido → {cached:true}; enlace inválido → {error:"Enlace invalido (falta message_id)"}.
+    STACK WEB COMPLETO (nginx → api.php → backend/telegram.php → daemon) verificado con login cookie:
+    msg 3 bad / msg 9 ok (cached:true). UI (Playwright): "Miraculous" → 📺 → badge ✅
+    "Compatible con Roku (h264 · aac · mov,mp4,m4a,3gp,3g2,mj2)"; mensaje sin video → ⚠️
+    "El mensaje no contiene un video". node --check js/telegram.js OK; php -l OK.
+    LIMPIEZA: probe_tmp vacío; sin ROKU_KEEP de depuración; daemon normal.
+
+    DATOS (DB galix_streaming, 18-Oct): forum_video_index=251,832; telegram_sources=379.
+    ARCHIVOS: telegram_daemon/FastTelethon.py, telegram_daemon/downloader.py, telegram_daemon/api_server.py,
+              backend/telegram.php, js/telegram.js, style.css, index.html

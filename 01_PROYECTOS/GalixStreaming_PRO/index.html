@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0a0a0f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>GalixStreaming PRO</title>
+    <link rel="stylesheet" href="style.css?v=17">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <style>
+        #splash {
+            position: fixed; inset: 0; z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: #0a0a0f; color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            transition: opacity 0.3s;
+        }
+        #splash.hidden { opacity: 0; pointer-events: none; }
+        #splash .logo { font-size: 3rem; margin-bottom: 12px; }
+        #splash .title { font-size: 1.3rem; font-weight: 700; }
+        #splash .spinner {
+            width: 28px; height: 28px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top-color: #a855f7;
+            border-radius: 50%;
+            animation: splashSpin 0.8s linear infinite;
+            margin-top: 24px;
+        }
+        @keyframes splashSpin { to { transform: rotate(360deg); } }
+        #splash .sub { font-size: 0.75rem; color: #64748b; margin-top: 12px; }
+        #loginOverlay {
+            position: fixed; inset: 0; z-index: 9998;
+            display: none; align-items: center; justify-content: center;
+            background: rgba(10,10,15,0.9);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+        #loginOverlay.active { display: flex; }
+        #loginOverlay .login-modal {
+            background: #16161e;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            padding: 32px;
+            width: 90%; max-width: 360px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        #loginOverlay .login-icon { font-size: 2.5rem; margin-bottom: 8px; }
+        #loginOverlay h2 { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
+        #loginOverlay .login-desc { font-size: 0.75rem; color: #64748b; margin-bottom: 20px; }
+        #loginOverlay input {
+            width: 100%;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 12px 16px;
+            color: #e2e8f0;
+            font-size: 0.95rem;
+            outline: none;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+        }
+        #loginOverlay input:focus { border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168,85,247,0.3); }
+        #loginOverlay .login-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #a855f7, #7c3aed);
+            border: none; color: #fff;
+            padding: 12px; border-radius: 10px;
+            font-weight: 600; font-size: 0.9rem;
+            cursor: pointer; transition: opacity 0.15s;
+        }
+        #loginOverlay .login-btn:hover { opacity: 0.85; }
+        #loginOverlay .login-btn:active { opacity: 0.7; }
+        #loginOverlay .login-btn.faceid {
+            background: transparent;
+            border: 1px solid rgba(168,85,247,0.4);
+            color: #a855f7;
+            margin-top: 8px;
+        }
+        #loginOverlay .login-error {
+            font-size: 0.75rem; color: #ef4444;
+            margin-top: 8px; display: none;
+        }
+        #loginOverlay .login-error.active { display: block; }
+    </style>
+</head>
+<body>
+    <div id="splash">
+        <div class="logo">⚡</div>
+        <div class="title">GalixStreaming PRO</div>
+        <div class="spinner"></div>
+        <div class="sub">Cargando...</div>
+    </div>
+    <div id="loginOverlay">
+        <div class="login-modal">
+            <div class="login-icon">🔐</div>
+            <h2>Master Key</h2>
+            <div class="login-desc">Llave de seguridad del ecosistema</div>
+            <input type="password" id="loginPassword" placeholder="••••••••••••" autocomplete="current-password">
+            <button id="loginBtn" class="login-btn">Iniciar sesión</button>
+            <button id="loginFaceId" class="login-btn faceid hidden">🔒 Face ID</button>
+            <div id="loginError" class="login-error">Master Key inválida</div>
+        </div>
+    </div>
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">⚡</span>
+            <h1 class="title">GalixStreaming <span class="pro">PRO</span></h1>
+        </div>
+        <nav class="nav">
+            <button class="nav-btn" data-tab="search">🔍 Buscar</button>
+            <button class="nav-btn active" data-tab="telegram">📱 Telegram</button>
+            <button class="nav-btn" data-tab="queue">📥 Cola</button>
+            <button class="nav-btn" data-tab="history">📋 Historial</button>
+        </nav>
+    </header>
+
+    <main class="main">
+        <section id="tab-search" class="tab">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Buscar película o serie..." autocomplete="off">
+                <button id="searchBtn" class="btn-primary">Buscar</button>
+            </div>
+            <div class="filters">
+                <button class="filter-btn active" data-tipo="">Todos</button>
+                <button class="filter-btn" data-tipo="movie">Películas</button>
+                <button class="filter-btn" data-tipo="series">Series</button>
+            </div>
+            <div id="searchResults" class="results-grid"></div>
+            <div id="searchLoading" class="loading hidden">
+                <div class="spinner"></div>
+                <span>Buscando en TMDB + PirateBay...</span>
+            </div>
+            <div id="searchEmpty" class="empty-state">
+                <span class="empty-icon">🎬</span>
+                <p>Escribe un título para buscar</p>
+            </div>
+        </section>
+
+        <section id="tab-telegram" class="tab active">
+            <div class="section-header">
+                <h2>📱 Telegram</h2>
+                <button id="tgAddSourceBtn" class="btn-primary" title="Agregar fuente" style="margin-left:12px;padding:6px 12px;font-size:0.8rem">+ Agregar fuente</button>
+                <div style="flex:1"></div>
+                <button id="refreshTelegram" class="btn-secondary">🔄 Actualizar</button>
+                <button id="restartTelegram" class="btn-secondary" style="margin-left:4px">🔁 Reiniciar</button>
+            </div>
+            <div id="tgAddSourceForm" class="tg-add-source hidden" style="margin-bottom:12px">
+                <input type="text" id="tgSourceUrl" placeholder="t.me/canal, @username o t.me/+invite" autocomplete="off" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;color:var(--text);font-size:0.8rem;outline:none">
+                <button id="tgAddSourceSubmit" class="btn-primary" style="padding:8px 14px;font-size:0.8rem">Agregar</button>
+                <button id="tgAddSourceCancel" class="btn-secondary" style="padding:8px 14px;font-size:0.8rem">Cancelar</button>
+            </div>
+
+            <div id="tgStatus" class="tg-status-bar"></div>
+            <div id="tgAuth" class="telegram-auth hidden">
+                <h3>🔐 Autenticación</h3>
+                <div id="tgAuthForm"></div>
+            </div>
+
+            <div id="tgSources" class="tg-sources">
+                <fieldset class="tg-search-panel">
+                    <legend>🔍 Búsqueda y descarga</legend>
+                    <div class="tg-toolbar">
+                        <div class="tg-search-row">
+                            <div class="tg-search-col">
+                                <span class="tg-search-col-label">Buscar</span>
+                                <div class="tg-search-col-content">
+                                    <input type="text" id="tgGlobalSearch" placeholder="Buscar videos: ej. hombre en llamas" autocomplete="off">
+                                    <button id="tgGlobalSearchBtn" class="btn-primary" style="padding:8px 14px;font-size:0.75rem">Buscar</button>
+                                    <button id="tgGlobalSearchClear" class="btn-secondary hidden" style="padding:8px 10px;font-size:0.75rem">✕</button>
+                                </div>
+                            </div>
+                            <div class="tg-search-divider"></div>
+                            <div class="tg-search-col">
+                                <span class="tg-search-col-label">Filtrar</span>
+                                <div class="tg-search-col-content">
+                                    <input type="text" id="tgSourceSearch" placeholder="Filtrar fuentes..." autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="tg-search-divider"></div>
+                            <div class="tg-search-col">
+                                <span class="tg-search-col-label">Descargar</span>
+                                <div class="tg-search-col-content">
+                                    <input type="text" id="tgDownloadUrl" placeholder="t.me/c/123456/789" autocomplete="off">
+                                    <button id="tgDownloadBtn" class="btn-primary" style="padding:8px 14px;font-size:0.75rem">Descargar</button>
+                                </div>
+                            </div>
+                        </div>
+<div id="tgCategoryFilters" class="tg-category-filters">
+                    <button class="tg-cat-btn active" data-cat="all">📡 Todos</button>
+                    <button class="tg-cat-btn" data-cat="peliculas">🎬 Películas</button>
+                    <button class="tg-cat-btn" data-cat="series">📺 Series</button>
+                    <button class="tg-cat-btn" data-cat="anime">🅰️ Anime</button>
+                    <button class="tg-cat-btn" data-cat="documentales">📚 Documentales</button>
+                </div>
+                    </div>
+                </fieldset>
+                <div id="tgGlobalResults" class="tg-global-results hidden"></div>
+                <div id="tgSourcesGrid" class="tg-grid">
+                    <div class="tg-loading">Cargando fuentes...</div>
+                </div>
+                <div id="tgSourcesEmpty" class="empty-state">
+                    <span class="empty-icon">📡</span>
+                    <p>Sin fuentes</p>
+                </div>
+            </div>
+
+            <div id="tgPreviewModal" class="tg-modal hidden">
+                <div class="tg-modal-backdrop"></div>
+                <div class="tg-modal-content">
+                    <div class="tg-modal-header">
+                        <h3 id="tgPreviewTitle">Videos</h3>
+                        <button id="tgPreviewClose" class="queue-btn cancel">✕</button>
+                    </div>
+                    <div id="tgPreviewBody" class="tg-modal-body">
+                        <div class="tg-loading">Cargando...</div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <section id="tab-queue" class="tab">
+            <div class="section-header">
+                <h2>📥 Cola de Descargas</h2>
+                <button id="refreshQueue" class="btn-secondary">Actualizar</button>
+<button id="clearQueue" class="btn-secondary" style="margin-left:8px;color:var(--red)">🗑 Limpiar completados</button>
+            </div>
+            <div id="queueList" class="queue-list"></div>
+            <div id="queueEmpty" class="empty-state">
+                <span class="empty-icon">📥</span>
+                <p>No hay descargas en curso</p>
+            </div>
+        </section>
+
+        <section id="tab-history" class="tab">
+            <div class="section-header">
+                <h2>📋 Historial</h2>
+                <button id="refreshHistory" class="btn-secondary">Actualizar</button>
+            </div>
+            <div id="historyList" class="history-list"></div>
+            <div id="historyEmpty" class="empty-state">
+                <span class="empty-icon">📋</span>
+                <p>Sin historial de descargas</p>
+            </div>
+            <button id="historyMore" class="btn-secondary hidden" style="margin-top:12px;width:100%">Cargar más</button>
+        </section>
+    </main>
+
+    <div id="tmdbPreviewModal" class="tg-modal hidden">
+        <div class="tg-modal-backdrop"></div>
+        <div class="tg-modal-content" style="max-width:600px">
+            <div class="tg-modal-header">
+                <div></div>
+                <button class="tg-modal-close queue-btn cancel">✕</button>
+            </div>
+            <div id="tmdbPreviewContent" class="tg-modal-body"></div>
+        </div>
+    </div>
+
+    <div id="renameModal" class="tg-modal hidden">
+        <div class="tg-modal-backdrop"></div>
+        <div class="tg-modal-content" style="max-width:450px">
+            <div class="tg-modal-header">
+                <h3>⬇️ Descargar</h3>
+            </div>
+            <div style="padding:16px">
+                <input type="text" id="renameInput" style="width:100%;padding:10px 12px;font-size:1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);outline:none;box-sizing:border-box">
+                <p style="font-size:0.8rem;color:var(--muted);margin:8px 0 0">Personaliza el nombre o déjalo vacío para usar el original</p>
+                <input type="hidden" id="renameUrl" value="">
+                <div style="margin-top:14px">
+                    <input type="hidden" id="folderInput" value="">
+                    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                        <button type="button" id="folderExploreBtn" class="btn-secondary">📂 Explorar</button>
+                        <button type="button" id="folderRootBtn" class="btn-secondary">Raíz</button>
+                    </div>
+                    <div id="folderExplorer" class="folder-explorer hidden">
+                        <div id="folderBreadcrumb" class="folder-breadcrumb"></div>
+                        <div id="folderChildren" class="folder-children"></div>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;padding:12px 16px;justify-content:flex-end;border-top:1px solid var(--border)">
+                <button id="renameCancel" class="btn-secondary">Cancelar</button>
+                <button id="renameConfirm" class="btn-primary">Descargar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+<script>API = (location.pathname.endsWith('/') ? location.origin + location.pathname : location.origin + location.pathname.slice(0, location.pathname.lastIndexOf('/') + 1)) + 'api.php';</script>
+    <script src="js/app.js?v=31"></script>
+    <script src="js/telegram.js?v=28"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
+</body>
+</html>
