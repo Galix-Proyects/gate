@@ -37,10 +37,10 @@ GalixStreaming_PRO usa el sistema de auth centralizado en `00_SISTEMA/auth_lib.p
 ### Fix loadQueue
 `initQueue()` solo registra el listener del botón refresh. `loadQueue()` + `setInterval()` se activan exclusivamente después de auth exitoso (en ambas rutas: login submit y verificación de sesión existente). Esto elimina el spam de 401 antes del login.
 
-### Logout (BUG conocido)
-`logout.php` llama `galix_logout()` sin `galix_auth_init()` previo → `session_start()` nunca se ejecuta → `session_destroy()` falla → la sesión sigue activa.
+### Logout (FIX 2026-10-18)
+`logout.php` llamaba `galix_logout()` sin `galix_auth_init()` previo → `session_start()` nunca se ejecutaba → `session_destroy()` fallaba → la sesión seguía activa.
 
-**Fix pendiente:** agregar `galix_auth_init()` al inicio de `logout.php`.
+**Fix aplicado:** `galix_auth_init()` al inicio de `00_SISTEMA/logout.php` (antes de `galix_logout()`). Verificado: tras logout, `api.php` responde 401.
 
 ## 3B. Sesión Telethon — recuperación y re-login (2026-10-18)
 
@@ -84,6 +84,19 @@ Navegador → nginx :8080 → api.php → telegram.php (proxy) → Daemon Flask 
   al final del MP4.
 - Decide con el script oficial `00_SISTEMA/_Poderes/roku_compat_check.sh` (regla MP4/H.264/AAC).
 - Endpoint `api.php?action=telegram&tg=roku_check` → `POST /check_roku` del daemon. Cache 600s.
+- **Blindaje anti-flood (2026-10-18):** pulsar 📺 muchas veces seguidas generaba una tormenta de
+  `GetFileRequest` (flood-wait) que inestabilizaba y tumbaba el cliente de Telegram. Mitigado con
+  `downloader._roku_lock` (serializa los sondeos) + `future.cancel()` en el timeout de
+  `api_server.check_roku()` (ya no deja corrutinas huérfanas martillando tras el 504).
+
+### Verificación nocturna Roku (runbook)
+- La recodificación Roku corre en la ventana **23:00–06:15**; el escaneo se cron-dispara a las `22:45`
+  (`roku_nightly_scan.sh`). Ejecutar este chequeo por la mañana (post-23:00 no es verificable de día).
+- **Estado:** `cat ~/logs/roku_recode.state` (pid, `night`, heartbeat `hb`).
+- **Cola:** `01_PROYECTOS/GalixMovie/backend/roku_recode_queue.json` → `entries[]` con `status`
+  (`done`/`pending` / `reason`). Al 2026-10-18: 17 done / 11 pending.
+- **Log:** `tail ~/logs/roku_recode.log`; alertas en `~/logs/roku_alert.log`.
+- **Watchdogs:** `roku_daemon_watchdog.sh` cada 5 min; `roku_download_watch.sh` cada 3 min.
 
 ## 4. Tabla forum_video_index
 
