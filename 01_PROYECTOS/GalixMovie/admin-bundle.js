@@ -159,7 +159,7 @@ async function runScan() {
               const lineOut = obj.file
                 ? `> ${icon} ${obj.msg}: ${obj.file}`
                 : `> ${obj.msg}`;
-              consoleBox.innerHTML += lineOut + '<br>';
+              consoleBox.insertAdjacentHTML('beforeend', lineOut + '<br>');
               consoleBox.scrollTop = consoleBox.scrollHeight;
             } else if (obj.type === 'error') {
               xhrError = new Error(obj.message);

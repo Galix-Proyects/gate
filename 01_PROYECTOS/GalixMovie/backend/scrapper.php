@@ -495,10 +495,15 @@ function findRcloneBinary(): string {
  */
 function rcloneExecSafe(string $cmd, int $timeoutSec = 15): string {
     $timeoutBin = trim(shell_exec('which timeout 2>/dev/null') ?: '');
+    $parts = [];
+    $parts[] = escapeshellarg('/data/data/com.termux/files/usr/bin/env');
+    $parts[] = 'HOME=/data/data/com.termux/files/home';
     if ($timeoutBin) {
-        $cmd = escapeshellarg($timeoutBin) . ' ' . $timeoutSec . ' ' . $cmd;
+        $parts[] = escapeshellarg($timeoutBin);
+        $parts[] = strval($timeoutSec);
     }
-    return shell_exec($cmd) ?? '';
+    $parts[] = $cmd;
+    return shell_exec(implode(' ', $parts)) ?? '';
 }
 
 function scanGoogleDrive(array $gFolders = ['HLS_TEST']): array {
@@ -507,10 +512,8 @@ function scanGoogleDrive(array $gFolders = ['HLS_TEST']): array {
     $rcloneBin    = findRcloneBinary();
     $rcloneConfig = '/data/data/com.termux/files/home/.config/rclone/rclone.conf';
     $configFlag   = file_exists($rcloneConfig) ? ' --config ' . escapeshellarg($rcloneConfig) : '';
-    $env          = 'HOME=/data/data/com.termux/files/home ';
-
     // ── PRE-FLIGHT: verificar que rclone responda ─────────────────────────
-    $healthCheck = $env . escapeshellarg($rcloneBin) . $configFlag . ' version 2>/dev/null';
+    $healthCheck = escapeshellarg($rcloneBin) . $configFlag . ' version 2>/dev/null';
     $healthOut = rcloneExecSafe($healthCheck, 5);
     if (!$healthOut) {
         error_log('[scrapper] rclone no responde — omitiendo escaneo GDrive');
@@ -933,6 +936,9 @@ if ($isWeb) {
         ob_start();
 
         try {
+            echo json_encode(['type' => 'progress', 'current' => 0, 'total' => 0, 'file' => '', 'msg' => 'Iniciando escaneo...']) . "\n";
+            ob_flush();
+            flush();
             $videos = scanAllMedia(MEDIA_DIR);
             $total = count($videos);
             $pad = str_repeat(' ', 4096);
@@ -943,10 +949,9 @@ if ($isWeb) {
 
             $stmt = $pdo->query("SELECT archivo_path FROM peliculas_metadata WHERE archivo_path IS NOT NULL");
             $existingFiles = $stmt->fetchAll(PDO::FETCH_COLUMN);
-
-            // Incluir también los episodios de series_metadata para reconocer archivos ya indexados
             $stmt2 = $pdo->query("SELECT archivo_path FROM series_metadata WHERE archivo_path IS NOT NULL");
             $existingFiles = array_merge($existingFiles, $stmt2->fetchAll(PDO::FETCH_COLUMN));
+            $existingFilesMap = array_flip($existingFiles);
 
             echo json_encode(['type' => 'progress', 'current' => 0, 'total' => $total, 'file' => '', 'msg' => 'Consultando base de datos...']) . "\n";
             ob_flush();
@@ -998,7 +1003,7 @@ if ($isWeb) {
             }
 
             // EARLY SKIP: si ya está en BD y skipIndexed activo, saltar TMDB
-            $isAlreadyIndexed = in_array($video['path'], $existingFiles);
+            $isAlreadyIndexed = isset($existingFilesMap[$video['path']]);
             if ($skipIndexed && $isAlreadyIndexed) {
                 echo json_encode(['type' => 'progress', 'current' => $i+1, 'total' => count($videos), 'file' => $video['name'], 'msg' => 'OK (ya indexado)']) . "\n";
                 ob_flush(); flush();
@@ -1149,6 +1154,9 @@ if ($isWeb) {
         ob_start();
 
         try {
+            echo json_encode(['type' => 'progress', 'current' => 0, 'total' => 0, 'file' => '', 'msg' => 'Iniciando escaneo...']) . "\n";
+            ob_flush();
+            flush();
             $videos = scanAllMedia(MEDIA_DIR);
             $total  = count($videos);
             $pad    = str_repeat(' ', 4096);
@@ -1160,6 +1168,7 @@ if ($isWeb) {
             $existingFiles = $stmt->fetchAll(PDO::FETCH_COLUMN);
             $stmt2 = $pdo->query("SELECT archivo_path FROM series_metadata WHERE archivo_path IS NOT NULL");
             $existingFiles = array_merge($existingFiles, $stmt2->fetchAll(PDO::FETCH_COLUMN));
+            $existingFilesMap = array_flip($existingFiles);
 
             echo json_encode(['type' => 'progress', 'current' => 0, 'total' => $total, 'file' => '', 'msg' => 'Consultando base de datos...']) . "\n";
             ob_flush(); flush();
@@ -1183,7 +1192,7 @@ if ($isWeb) {
                 $basename = $video['name'];
                 $path     = $video['path'];
 
-                if (in_array($path, $existingFiles)) {
+                if (isset($existingFilesMap[$path])) {
                     echo json_encode(['type' => 'progress', 'current' => $i + 1, 'total' => $total, 'file' => $basename, 'msg' => 'Ya indexado']) . "\n";
                     ob_flush(); flush();
                     $omitidos++;
@@ -1316,6 +1325,7 @@ $log[] = "Archivos encontrados: " . count($videos);
 
 $stmt = $pdo->query("SELECT archivo_path FROM peliculas_metadata");
 $existingFiles = $stmt->fetchAll(PDO::FETCH_COLUMN);
+$existingFilesMap = array_flip($existingFiles);
 $log[] = "Archivos ya en catálogo: " . count($existingFiles);
 $log[] = "";
 
@@ -1337,7 +1347,7 @@ $ok = 0; $skip = 0; $omitidos = 0; $sinMatch = [];
 foreach ($videos as $video) {
     $log[] = "→ Archivo: {$video['name']}";
 
-    if (in_array($video['path'], $existingFiles)) {
+    if (isset($existingFilesMap[$video['path']])) {
         $log[] = "  [OMITIDO ⏭️] Ya está en el catálogo. Se omitió para ahorrar tiempo.";
         $log[] = "";
         $omitidos++;
