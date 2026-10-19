@@ -184,7 +184,10 @@ _probe_codes() {
     local f="$1" pe
     pe=$(ROKU_PROBESIZE=4194304 bash "$CHECK" "$f" 2>/dev/null)
     [ -n "$pe" ] || { echo "::0"; return; }
-    pe=$(printf '%s' "$pe" | python3 -c 'import sys,json; j=json.load(sys.stdin); v=(j.get("vcodec") or "").lower(); print(("" if v=="h264" else v)+":"+(j.get("acodec") or "")+":"+str(j.get("duration",0)))' 2>/dev/null)
+    pe=$(printf '%s' "$pe" | python3 -c 'import sys,json; j=json.load(sys.stdin); v=(j.get("vcodec") or "").lower(); prof=(j.get("profile") or "").lower(); pix=(j.get("pix_fmt") or "").lower()
+    need="" if v=="h264" else v
+    if not need and (prof=="high 10" or pix=="yuv420p10le"): need="h264"
+    print(need+":"+(j.get("acodec") or "")+":"+str(j.get("duration",0)))' 2>/dev/null)
     echo "${pe:-::0}"
 }
 
