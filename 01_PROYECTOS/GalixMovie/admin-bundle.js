@@ -113,6 +113,7 @@ async function runScan() {
   const progressText = document.getElementById('progressBarText');
   const progressMsg = document.getElementById('progressBarMsg');
   btn.disabled = true;
+  if (window.switchTab) window.switchTab('console');
 
   consoleBox.innerHTML = '> 🔍 Escaneando BUNKER...<br>';
   consoleBox.scrollTop = consoleBox.scrollHeight;
