@@ -936,7 +936,8 @@ if ($isWeb) {
         ob_start();
 
         try {
-            echo json_encode(['type' => 'progress', 'current' => 0, 'total' => 0, 'file' => '', 'msg' => 'Iniciando escaneo...']) . "\n";
+            $pad = str_repeat(' ', 4096);
+            echo json_encode(['type' => 'progress', 'current' => 0, 'total' => 0, 'file' => '', 'msg' => 'Iniciando escaneo...']) . $pad . "\n";
             ob_flush();
             flush();
             $videos = scanAllMedia(MEDIA_DIR);
@@ -1154,7 +1155,8 @@ if ($isWeb) {
         ob_start();
 
         try {
-            echo json_encode(['type' => 'progress', 'current' => 0, 'total' => 0, 'file' => '', 'msg' => 'Iniciando escaneo...']) . "\n";
+            $pad = str_repeat(' ', 4096);
+            echo json_encode(['type' => 'progress', 'current' => 0, 'total' => 0, 'file' => '', 'msg' => 'Iniciando escaneo...']) . $pad . "\n";
             ob_flush();
             flush();
             $videos = scanAllMedia(MEDIA_DIR);
