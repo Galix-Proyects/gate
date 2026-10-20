@@ -277,6 +277,50 @@ function tmdbGetSeasonEpisodes(int $seriesId, int $season): array {
     return $map;
 }
 
+/**
+ * Detectar número de temporada desde el nombre de una carpeta.
+ * Reconoce: "Temp N", "Temporada N", "Season N", "T N", "S N", "GOT N",
+ * y variantes con prefijo ("LCDP TEMP 1", "Two and Half Men Temp 1").
+ * Retorna 0 si la carpeta no es una carpeta de temporada.
+ */
+function parseSeasonFolder(string $dirName): int {
+    $name = trim($dirName);
+    if ($name === '') return 0;
+    // Prefijo de serie + marcador de temporada al final: "... Temp 4", "LCDP TEMP 1", "GOT 3"
+    if (preg_match('/^(.*?)\s*(?:temp(?:orada)?|season|t|s|got|cap(?:itulo)?)\s*([0-9]{1,2})\s*$/i', $name, $m)) {
+        // Evitar falsos positivos: si la parte previa parece un nombre de serie real, igual cuenta
+        return (int)$m[2];
+    }
+    // Solo marcador: "T1", "S01", "Temp 10"
+    if (preg_match('/^(?:temp(?:orada)?|season|t|s|got)\s*([0-9]{1,2})$/i', $name, $m)) {
+        return (int)$m[1];
+    }
+    return 0;
+}
+
+/**
+ * Extraer episodio (y opcionalmente temporada) desde el nombre de archivo.
+ * Prioridad: Ep X > SxxExx > NxNN > número suelto.
+ * Retorna ['episode' => int, 'season' => int] con season=0 si no se pudo inferir.
+ */
+function parseEpisodeFromName(string $fileName): array {
+    $name = preg_replace('/\.(mp4|mkv|avi|mov|webm|m4v)$/i', '', $fileName);
+    $episode = 0;
+    $season = 0;
+    if (preg_match('/[Ee]p[.\s]*(\d+)/i', $name, $m)) {
+        $episode = (int)$m[1];
+    } elseif (preg_match('/[Ss](\d{1,2})[Ee](\d{1,3})/i', $name, $m)) {
+        $season = (int)$m[1];
+        $episode = (int)$m[2];
+    } elseif (preg_match('/(\d{1,2})[xX](\d{1,3})/', $name, $m)) {
+        $season = (int)$m[1];
+        $episode = (int)$m[2];
+    } elseif (preg_match('/\b(\d{1,3})\b/', $name, $m)) {
+        $episode = (int)$m[1];
+    }
+    return ['episode' => $episode, 'season' => $season];
+}
+
 /** Detectar serie desde estructura de carpetas: media/series/[Serie]/[Temporada N]/[archivo].mp4 o gdrive:HLS_TEST/[Serie]/[SxxEyy]/playlist.m3u8 */
 function detectSeriesFromPath(string $filePath): ?array {
     $normalized = str_replace('\\', '/', $filePath);
@@ -342,34 +386,24 @@ function detectSeriesFromPath(string $filePath): ?array {
         }
     }
 
-    // 2. Caso local estándar (series) — soporta SERIES/, SERIES2/, etc.
-    if (preg_match('~/series\d*/~i', $normalized, $m, PREG_OFFSET_CAPTURE)) {
+    // 2. Caso local estándar (series) — soporta SERIES/, SERIES2/, SERIES4/, "SERIES 1TB", etc.
+    if (preg_match('~/(series(?:\s*\d+[A-Za-z]*|[A-Za-z]*)?)/~i', $normalized, $m, PREG_OFFSET_CAPTURE)) {
         $pos = $m[0][1];
         $prefixLen = strlen($m[0][0]);
         $afterSeries = substr($normalized, $pos + $prefixLen);
-        $parts = explode('/', $afterSeries);
+        $parts = array_values(array_filter(explode('/', $afterSeries), function($p){ return $p !== ''; }));
         if (count($parts) >= 2) {
             $seriesName = trim(str_replace(['_', '.'], ' ', $parts[0]));
             if ($seriesName) {
-                // La temporada se obtiene del nombre de la carpeta (terminación numérica)
-                $season = 0;
-                if (preg_match('/(\d+)$/', $parts[1], $m)) {
-                    $season = (int)$m[1];
-                }
+                // La temporada se obtiene SOLO si la subcarpeta es una carpeta de temporada real.
+                $season = parseSeasonFolder($parts[1]);
 
                 $basename = end($parts);
-                $epName = preg_replace('/\.(mp4|mkv|avi|mov|webm)$/i', '', $basename);
-
-                // El episodio se obtiene del nombre del archivo (prioridad: SxxExx > Ep X > número suelto)
-                $episode = 0;
-                if (preg_match('/[Ee]p[.\s]*(\d+)/i', $epName, $m)) {
-                    $episode = (int)$m[1];
-                } elseif (preg_match('/[Ss]\d{1,2}[Ee](\d{1,3})/', $epName, $m)) {
-                    $episode = (int)$m[1];
-                } elseif (preg_match('/(\d{1,2})[xX](\d{1,3})/', $epName, $m)) {
-                    $episode = (int)$m[2];
-                } elseif (preg_match('/\b(\d{1,3})\b/', $epName, $m)) {
-                    $episode = (int)$m[1];
+                $parsedEp = parseEpisodeFromName($basename);
+                $episode = $parsedEp['episode'];
+                // Fallback: si no hay carpeta de temporada, inferirla del nombre del archivo
+                if ($season === 0 && $parsedEp['season'] > 0) {
+                    $season = $parsedEp['season'];
                 }
 
                 return [
@@ -408,24 +442,14 @@ function detectSeriesFromPath(string $filePath): ?array {
 
             // Si hay otro subdirectorio intermedio antes del archivo (ej: HDD_500GB/Serie/GOT1/S01E01.mp4)
             if (count($parts) >= 3 && $season === 0) {
-                if (preg_match('/(\d+)$/', $parts[1], $m)) {
-                    $season = (int)$m[1];
-                }
+                $season = parseSeasonFolder($parts[1]);
             }
 
             $basename = end($parts);
-            $epName = preg_replace('/\.(mp4|mkv|avi|mov|webm)$/i', '', $basename);
-
-            // Buscar episodio
-            $episode = 0;
-            if (preg_match('/[Ee]p[.\s]*(\d+)/i', $epName, $m)) {
-                $episode = (int)$m[1];
-            } elseif (preg_match('/[Ss]\d{1,2}[Ee](\d{1,3})/', $epName, $m)) {
-                $episode = (int)$m[1];
-            } elseif (preg_match('/(\d{1,2})[xX](\d{1,3})/', $epName, $m)) {
-                $episode = (int)$m[2];
-            } elseif (preg_match('/\b(\d{1,3})\b/', $epName, $m)) {
-                $episode = (int)$m[1];
+            $parsedEp = parseEpisodeFromName($basename);
+            $episode = $parsedEp['episode'];
+            if ($season === 0 && $parsedEp['season'] > 0) {
+                $season = $parsedEp['season'];
             }
 
             if ($seriesName) {
