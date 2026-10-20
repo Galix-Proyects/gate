@@ -96,13 +96,18 @@ function parseFileName(string $name): array {
     $season = 0;
     $episode = 0;
 
-    // Detectar formato de episodio: S01E01, S02E05, S03X03, 2x01, etc.
-    if (preg_match('/[Ss](\d{1,2})[EeXx](\d{1,3})/', $name, $m)) {
+    // Detectar formato de episodio: S01E01, T01E01, 04E10, S03X03, 2x01, etc.
+    if (preg_match('/[SsTt](\d{1,2})[EeXx](\d{1,3})/', $name, $m)) {
         $isEpisode = true;
         $season = intval($m[1]);
         $episode = intval($m[2]);
     } elseif (preg_match('/(\d{1,2})[xX](\d{1,3})/', $name, $m)) {
         // Formato alternativo: 2x01, 1x05, etc.
+        $isEpisode = true;
+        $season = intval($m[1]);
+        $episode = intval($m[2]);
+    } elseif (preg_match('/\b(\d{1,2})[Ee](\d{1,3})\b/', $name, $m)) {
+        // Formato sin prefijo: 04E10, 01E05, etc.
         $isEpisode = true;
         $season = intval($m[1]);
         $episode = intval($m[2]);
@@ -122,9 +127,10 @@ function parseFileName(string $name): array {
     $name = preg_replace('/\s*[\(\[]?(19|20)\d{2}[\)\]]?\s*.*/i', '', $name);
     // Eliminar tags técnicos
     $name = preg_replace('/\s*[\(\[]?\b(1080p|720p|4k|2160p|BluRay|BDRip|WEB[-.]?DL|x26[45]|H\.?26[45]|HEVC|AAC|DTS|HDR|DVDRip|Lat|Latino|ESP|ENG|CAM|HDCAM|TS|PROPER|REPACK|INTERNAL)\b[\)\]]?\s*.*/i', '', $name);
-    // Eliminar número de episodio S01E01 o 2x01 si quedó
-    $name = preg_replace('/\s*[Ss]\d{1,2}[Ee]\d{1,3}\s*/', ' ', $name);
+    // Eliminar número de episodio S01E01, T01E01, 04E10 o 2x01 si quedó
+    $name = preg_replace('/\s*[SsTt]\d{1,2}[EeXx]\d{1,3}\s*/', ' ', $name);
     $name = preg_replace('/\s*\d{1,2}[xX]\d{1,3}\s*/', ' ', $name);
+    $name = preg_replace('/\s*\b\d{1,2}[Ee]\d{1,3}\b\s*/', ' ', $name);
     // Eliminar toda puntuación, símbolos y acentos NFD (combining marks) para mejorar la búsqueda en TMDB
     $name = preg_replace('/[^\p{L}\p{N}\s]/u', '', $name);
     // Eliminar múltiples espacios
@@ -309,10 +315,13 @@ function parseEpisodeFromName(string $fileName): array {
     $season = 0;
     if (preg_match('/[Ee]p[.\s]*(\d+)/i', $name, $m)) {
         $episode = (int)$m[1];
-    } elseif (preg_match('/[Ss](\d{1,2})[Ee](\d{1,3})/i', $name, $m)) {
+    } elseif (preg_match('/[SsTt](\d{1,2})[Ee](\d{1,3})/i', $name, $m)) {
         $season = (int)$m[1];
         $episode = (int)$m[2];
     } elseif (preg_match('/(\d{1,2})[xX](\d{1,3})/', $name, $m)) {
+        $season = (int)$m[1];
+        $episode = (int)$m[2];
+    } elseif (preg_match('/\b(\d{1,2})[Ee](\d{1,3})\b/', $name, $m)) {
         $season = (int)$m[1];
         $episode = (int)$m[2];
     } elseif (preg_match('/\b(\d{1,3})\b/', $name, $m)) {
@@ -636,9 +645,11 @@ function scanAllMedia(string $localDir): array {
 
 /** Guardar en BD + Auto-renombrar archivo físico */
 function upsertContent(PDO $pdo, array $tmdbData, string $tipo, string $filePath, string $filenameTitle = '', int $filenameYear = 0, bool $confidentMatch = true, int $season = 0, int $episode = 0, int $fileSize = 0): int {
-    // Buscar por tmdb_id sin filtrar por tipo (evita duplicados por mismatch de tipo)
-    $check = $pdo->prepare("SELECT id, tipo FROM contenido WHERE tmdb_id = ?");
-    $check->execute([$tmdbData['id']]);
+    // Buscar por (tmdb_id, tipo) — tmdb_id es único solo DENTRO de cada tipo.
+    // (Un movie y una serie pueden compartir tmdb_id; ej: Kebab Connection movie 2004
+    //  y Malcolm in the Middle tv 2004. Filtrar por tipo evita colisiones.)
+    $check = $pdo->prepare("SELECT id, tipo FROM contenido WHERE tmdb_id = ? AND tipo = ? LIMIT 1");
+    $check->execute([$tmdbData['id'], $tipo]);
     $existingRow = $check->fetch(PDO::FETCH_ASSOC);
     $existing = $existingRow ? (int)$existingRow['id'] : false;
     if ($existing) {
