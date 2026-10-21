@@ -1356,7 +1356,32 @@ $log[] = "═══════════════════════�
 $log[] = "FFprobe: " . (FFPROBE ? "✅ Disponible (" . FFPROBE . ")" : "⚠️  No instalado (usando modo nombre)");
 $log[] = "";
 
-$videos = scanAllMedia(MEDIA_DIR);
+// ── MODO DIRIGIDO (GalixStreaming PRO / Telegram) ──
+// GALIX_ONLY_PATHS: lista de rutas (separadas por \n) a indexar puntualmente.
+// Si está presente, se construyen las entradas directamente SIN recorrer todo BUNKER.
+$galixOnlyRaw = trim(getenv('GALIX_ONLY_PATHS') ?: '');
+$galixOnly = [];
+if ($galixOnlyRaw !== '') {
+    foreach (preg_split('/[\r\n]+/', $galixOnlyRaw) as $op) {
+        $op = trim($op);
+        if ($op !== '') $galixOnly[$op] = true;
+    }
+}
+
+if (!empty($galixOnly)) {
+    $videos = [];
+    $extsAllowed = ['mp4', 'mkv', 'avi', 'mov', 'webm'];
+    foreach (array_keys($galixOnly) as $p) {
+        if (!is_file($p)) { $log[] = "[🎯 DIRIGIDO] Ruta inexistente: $p"; continue; }
+        $ext = strtolower(pathinfo($p, PATHINFO_EXTENSION));
+        if (!in_array($ext, $extsAllowed)) { $log[] = "[🎯 DIRIGIDO] Extensión no soportada: $p"; continue; }
+        $videos[] = ['path' => $p, 'name' => pathinfo($p, PATHINFO_FILENAME), 'file_size' => @filesize($p) ?: 0];
+    }
+    $log[] = "[🎯 DIRIGIDO] " . count($videos) . " archivo(s) de " . count($galixOnly) . " ruta(s) solicitada(s) (sin recorrer BUNKER).";
+} else {
+    $videos = scanAllMedia(MEDIA_DIR);
+}
+
 $log[] = "Directorio: " . MEDIA_DIR;
 $log[] = "Archivos encontrados: " . count($videos);
 
@@ -1384,7 +1409,9 @@ $ok = 0; $skip = 0; $omitidos = 0; $sinMatch = [];
 foreach ($videos as $video) {
     $log[] = "→ Archivo: {$video['name']}";
 
-    if (isset($existingFilesMap[$video['path']])) {
+    // En modo FIX (GALIX_FIX_ID) no se omite aunque ya esté en catálogo: se reindexa esa ficha.
+    $fixId = !empty($galixOnly) ? (int)(getenv('GALIX_FIX_ID') ?: 0) : 0;
+    if ($fixId <= 0 && isset($existingFilesMap[$video['path']])) {
         $log[] = "  [OMITIDO ⏭️] Ya está en el catálogo. Se omitió para ahorrar tiempo.";
         $log[] = "";
         $omitidos++;
@@ -1410,6 +1437,37 @@ foreach ($videos as $video) {
     $isEpisode   = $parsed['is_episode'];
     $log[] = "  [FILE] Nombre parseado: '$searchQuery'" . ($searchYear ? " (año: $searchYear)" : "") . ($isEpisode ? " [Episodio S{$parsed['season']}E{$parsed['episode']}]" : "");
 
+    // ── OVERRIDES DIRIGIDOS (GalixStreaming PRO / Telegram) ──
+    // Solo se aplican en MODO DIRIGIDO (GALIX_ONLY_PATHS). Si no, un scan completo
+    // forzaría el mismo título/TMDB a TODOS los archivos (corrupción del catálogo).
+    $directed = !empty($galixOnly);
+    // GALIX_CUSTOM_TITLE / GALIX_FIX_TITLE: título forzado desde el panel.
+    $customTitle = $directed ? trim(getenv('GALIX_CUSTOM_TITLE') ?: (getenv('GALIX_FIX_TITLE') ?: '')) : '';
+    if ($customTitle !== '') {
+        $parsed['title'] = $customTitle;
+        if (preg_match('/\((\d{4})\)/', $customTitle, $cyM)) $parsed['year'] = (int)$cyM[1];
+        $parsed['title'] = trim(preg_replace('/\s*\(\d{4}\)\s*/', ' ', $parsed['title']));
+        $searchQuery = $parsed['title'];
+        $searchYear  = $parsed['year'];
+        $log[] = "  [🎯 TÍTULO] Forzado por panel: '$searchQuery'" . ($searchYear ? " (año: $searchYear)" : "");
+    }
+
+    // GALIX_TMDB_ID / GALIX_FIX_TMDB: usar directamente ese ID (evita búsqueda y garantiza match).
+    $forcedTmdb = $directed ? (int)(getenv('GALIX_TMDB_ID') ?: (getenv('GALIX_FIX_TMDB') ?: 0)) : 0;
+    if ($forcedTmdb > 0) {
+        $tipo = $isEpisode ? 'series' : 'movie';
+        $result = tmdbSearchById($forcedTmdb, $tipo);
+        if (!$result && !$isEpisode) {
+            $result = tmdbSearchById($forcedTmdb, 'series');
+            if ($result) $tipo = 'series';
+        }
+        $confident = $result !== null;
+        if ($result) {
+            $log[] = "  [🎯 TMDB] ID forzado $forcedTmdb → '" . ($result['title'] ?? $result['name'] ?? '?') . "'";
+        } else {
+            $log[] = "  [❌ TMDB] ID forzado $forcedTmdb no encontrado.";
+        }
+    } else {
     // ── PASO 2: Buscar TMDB con el nombre del archivo ─────────────────
     // Si es episodio, buscar como serie directamente
     if ($isEpisode) {
@@ -1428,6 +1486,7 @@ foreach ($videos as $video) {
     $confident = isConfidentMatch($searchQuery, $searchYear, $result);
     list($confident, $safetyMsg) = applySafetyNet($confident, $searchQuery, $result);
     if ($safetyMsg) $log[] = "  [🛡️ SAFETY] $safetyMsg";
+    }
 
     // ── PASO 4: Si NO es confiable, intentar con metadatos embebidos ──
     if (!$confident) {
@@ -1466,7 +1525,43 @@ foreach ($videos as $video) {
             $orphanedMatch = $orphaned[$result['id']]['id'] ?? null;
         }
     }
-    if ($orphanedMatch) {
+    if ($fixId > 0) {
+        if (!$result) {
+            $log[] = "  [FIX ERR] No se pudo obtener TMDB para la ficha $fixId; se conserva sin cambios.";
+        } else {
+        // ── MODO FIX: actualizar ficha existente (título/TMDB) y re-apuntar el archivo ──
+        $title = $result['title'] ?? $result['name'] ?? $parsed['title'];
+        $poster = !empty($result['poster_path']) ? TMDB_IMG . $result['poster_path'] : null;
+        $backdrop = !empty($result['backdrop_path']) ? 'https://image.tmdb.org/t/p/original' . $result['backdrop_path'] : null;
+        $sinopsis = $result['overview'] ?? '';
+        $fecha = $result['release_date'] ?? $result['first_air_date'] ?? null;
+        $rating = $result['vote_average'] ?? 0;
+        $newTmdb = (int)($result['id'] ?? 0);
+        $pdo->prepare("UPDATE contenido SET titulo=?, sinopsis=?, poster_path=?, backdrop_path=?, fecha_estreno=?, puntuacion=?, tmdb_id=? WHERE id=?")
+            ->execute([$title, $sinopsis, $poster, $backdrop, $fecha, $rating, $newTmdb, $fixId]);
+        // Re-apuntar el archivo en la tabla del tipo correspondiente
+        $tbl = ($tipo === 'series') ? 'series_metadata' : 'peliculas_metadata';
+        // 1º intentar la fila que YA apunta a este archivo (evita duplicados al re-indexar).
+        $upd = $pdo->prepare("UPDATE $tbl SET archivo_path=?, file_size=? WHERE contenido_id=? AND archivo_path=?");
+        $upd->execute([$video['path'], $video['file_size'] ?? 0, $fixId, $video['path']]);
+        if ($upd->rowCount() === 0) {
+            // 2º intentar por season/episode (NULL-safe para películas).
+            $upd2 = $pdo->prepare("UPDATE $tbl SET archivo_path=?, file_size=? WHERE contenido_id=? AND ((season <=> ?) AND (episode <=> ?))");
+            $upd2->execute([$video['path'], $video['file_size'] ?? 0, $fixId, $parsed['season'] ?: null, $parsed['episode'] ?: null]);
+        }
+        if ($upd->rowCount() === 0) {
+            $chk = $pdo->prepare("SELECT COUNT(*) FROM $tbl WHERE contenido_id=?");
+            $chk->execute([$fixId]);
+            if ((int)$chk->fetchColumn() === 0) {
+                $pdo->prepare("INSERT INTO $tbl (contenido_id, archivo_path, season, episode, file_size) VALUES (?,?,?,?,?)")
+                    ->execute([$fixId, $video['path'], $parsed['season'] ?: null, $parsed['episode'] ?: null, $video['file_size'] ?? 0]);
+            }
+        }
+        $log[] = "  [OK ✅] Reindexado: \"$title\" (ID: $fixId, TMDB $newTmdb)";
+        $log[] = "  [SAVED 📁] {$video['path']}";
+        $ok++;
+        }
+    } elseif ($orphanedMatch) {
         $otitle = $result['title'] ?? $result['name'] ?? '?';
         $oposter = !empty($result['poster_path']) ? TMDB_IMG . $result['poster_path'] : null;
         $obackdrop = !empty($result['backdrop_path']) ? 'https://image.tmdb.org/t/p/original' . $result['backdrop_path'] : null;
