@@ -1073,6 +1073,27 @@
         // 🗑️ DHARMA CLEANUP: Limpiar catálogo de archivos eliminados
         window.runCleanup = async function() {
             try {
+                const boxCatalog = 'http://100.102.226.89:8080/GalixMovie/';
+                const onBox = /^(localhost|127\.0\.0\.1|100\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?$/i.test(location.hostname);
+
+                // En GitHub Pages (HTTPS) el backend PHP no existe y llamar a la Box por
+                // HTTP se bloquea por mixed-content: la limpieza solo corre en la Box.
+                if (!onBox) {
+                    const go = await Swal.fire({
+                        title: 'Limpieza disponible en la Box',
+                        html: 'Esta acción analiza archivos en los discos de la Box.<br><small style="color:#94a3b8">Abre el catálogo en la Box (Tailscale) y pulsa ahí «Limpiar catálogo».</small>',
+                        icon: 'info',
+                        showCancelButton: true,
+                        confirmButtonText: 'Abrir en la Box',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#10b981',
+                        background: '#0f172a',
+                        color: '#fff'
+                    });
+                    if (go.isConfirmed) window.open(boxCatalog, '_blank', 'noopener');
+                    return;
+                }
+
                 // ── 1. PREVIEW ───────────────────────────────────────
                 Swal.fire({
                     title: 'Analizando archivos huérfanos...',
@@ -1082,7 +1103,10 @@
                 });
 
                 const prevRes = await fetch('backend/cleanup.php?preview=1&v=' + Date.now());
-                const prevData = await prevRes.json();
+                if (!prevRes.ok) throw new Error('No se pudo consultar cleanup (HTTP ' + prevRes.status + ')');
+                const prevText = await prevRes.text();
+                let prevData;
+                try { prevData = JSON.parse(prevText); } catch (e) { throw new Error('Respuesta no válida del servidor (¿sesión o ruta incorrecta?)'); }
 
                 if (prevData.status !== 'success') {
                     Swal.fire({ icon: 'error', title: 'Error', text: prevData.message || 'Error al analizar', background: '#0f172a', color: '#fff' });
@@ -1132,7 +1156,10 @@
                 });
 
                 const res = await fetch('backend/cleanup.php?confirm=1&v=' + Date.now());
-                const data = await res.json();
+                if (!res.ok && res.status !== 401 && res.status !== 403) throw new Error('No se pudo ejecutar cleanup (HTTP ' + res.status + ')');
+                const resText = await res.text();
+                let data;
+                try { data = JSON.parse(resText); } catch (e) { throw new Error('Respuesta no válida del servidor'); }
 
                 if (data.status === 'aborted') {
                     Swal.fire({ icon: 'warning', title: 'Limpieza cancelada', text: data.message || 'Guarda de seguridad activada', background: '#0f172a', color: '#fff' });
