@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>GalixMovie · Admin</title>
+<meta name="theme-color" content="#e11d48">
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="../icons/GalixMovie.png?v=2.3">
+<meta http-equiv="refresh" content="2;url=http://100.102.226.89:8080/GalixMovie/admin.html">
+<style>
+  :root { --accent:#e11d48; --bg:#020617; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:#e2e8f0;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+  body { display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; }
+  .card { width:100%; max-width:360px; }
+  .badge { width:64px; height:64px; margin:0 auto 18px; border-radius:18px;
+    display:flex; align-items:center; justify-content:center; font-size:30px;
+    background:linear-gradient(135deg,#e11d48,#be123c); box-shadow:0 12px 30px rgba(225,29,72,.35); }
+  h1 { font-size:18px; margin:0 0 8px; letter-spacing:.2px; }
+  p { font-size:13px; line-height:1.5; color:#94a3b8; margin:0 0 20px; }
+  .bar { height:3px; width:100%; background:rgba(255,255,255,.07); border-radius:999px; overflow:hidden; margin-bottom:22px; }
+  .bar span { display:block; height:100%; width:40%; background:var(--accent); border-radius:999px;
+    animation:slide 1.1s ease-in-out infinite alternate; }
+  @keyframes slide { from { transform:translateX(-100%); } to { transform:translateX(250%); } }
+  a.btn { display:inline-flex; align-items:center; gap:8px; padding:12px 20px; border-radius:999px;
+    background:linear-gradient(135deg,#e11d48,#be123c); color:#fff; font-size:13.5px; font-weight:700;
+    text-decoration:none; box-shadow:0 10px 24px rgba(225,29,72,.35); }
+  a.btn:active { transform:scale(.97); }
+  small { display:block; margin-top:16px; font-size:11px; color:#64748b; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="badge">⚙️</div>
+  <h1>Abriendo el Administrador en la Box</h1>
+  <p>El panel real vive en la Box (PHP + MySQL). Te estamos redirigiendo…</p>
+  <div class="bar"><span></span></div>
+  <a class="btn" href="http://100.102.226.89:8080/GalixMovie/admin.html">Abrir ahora</a>
+  <small>Requiere estar conectado a la red Tailscale de la Box.<br>Si no abre, pulsa «Abrir ahora».</small>
+</div>
+<script>
+(function () {
+  var dest = 'http://100.102.226.89:8080/GalixMovie/admin.html' + location.search + location.hash;
+  setTimeout(function () { location.replace(dest); }, 700);
+})();
+</script>
+</body>
+</html>
