@@ -8,7 +8,13 @@
 <link rel="icon" href="../logo.png">
 <style>
   html, body { margin:0; padding:0; height:100%; background:#020617; overflow:hidden; }
-  #app { display:block; width:100%; height:100%; border:0; background:#020617; }
+  body { display:flex; flex-direction:column; }
+  .ribbon { flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:6px;
+            height:26px; background:#111827; color:#94a3b8; border-bottom:1px solid rgba(255,255,255,.07);
+            font:500 10.5px -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+            letter-spacing:.2px; white-space:nowrap; overflow:hidden; }
+  .ribbon b { color:#e11d48; font-weight:700; }
+  #app { flex:1 1 auto; display:block; width:100%; border:0; background:#020617; }
   .fab { position:fixed; right:10px; bottom:70px; z-index:20; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
   .fab a { display:inline-flex; align-items:center; gap:6px; padding:9px 13px; border-radius:999px;
            background:rgba(15,23,42,.94); border:1px solid rgba(255,255,255,.14); color:#e2e8f0;
@@ -19,6 +25,8 @@
 </style>
 </head>
 <body>
+<div class="ribbon">Catálogo en <b>GitHub Pages</b> · para reproducir usa «Reproducir en la Box»</div>
+
 <iframe id="app" src="../01_PROYECTOS/GalixMovie/"
         allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
         allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
