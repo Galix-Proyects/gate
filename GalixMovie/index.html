@@ -35,5 +35,36 @@
   <a class="play" href="http://100.102.226.89:8080/GalixMovie/">▶ Reproducir en la Box</a>
   <a href="http://100.102.226.89:8080/GalixMovie/admin.html">⚙️ Admin</a>
 </div>
+
+<script>
+(function () {
+  var BOX = 'http://100.102.226.89:8080/GalixMovie/';
+  var f = document.getElementById('app');
+
+  // El engranaje de la app apunta a "admin.html", que no existe en Pages.
+  // Se redirige a la Box (misma sesion) sin tocar el codigo de la app.
+  function patch() {
+    try {
+      var d = f.contentDocument;
+      if (!d || d.__galixPatched) return;
+      d.__galixPatched = true;
+      d.addEventListener('click', function (ev) {
+        var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
+        if (!a) return;
+        var h = a.getAttribute('href') || '';
+        if (/(^|\/)admin\.html(\?|#|$)/.test(h)) {
+          ev.preventDefault();
+          location.href = BOX + 'admin.html';
+        }
+      }, true);
+      var links = d.querySelectorAll('a[href="admin.html"], a[href$="/admin.html"]');
+      for (var i = 0; i < links.length; i++) { links[i].href = BOX + 'admin.html'; }
+    } catch (e) { /* otro origen: no aplica */ }
+  }
+
+  f.addEventListener('load', patch);
+  var n = 0, iv = setInterval(function () { patch(); if (++n > 60) clearInterval(iv); }, 500);
+})();
+</script>
 </body>
 </html>
