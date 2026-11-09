@@ -192,4 +192,4 @@ Plataforma de streaming propia. **Target:** Todo dispositivo — Smart TV, Roku 
 
 **Resultado:** `skip_indexed=1` → 0 filas (todo indexado); `skip_indexed=0` → **1.452 filas `ok`** en ~32 s. Reparacion: 641/665 deduplicados, 3 filas borradas, 7 episodios South Park re-vinculados, **0 rutas faltantes de 1.450**. `verify_local.php`: 350 locales, 0 faltantes.
 
-**Pages:** `https://galix-proyects.github.io/gate/GalixMovie/` es un puente (iframe al tunel) y ya funciona; el admin no puede ejecutarse en Pages porque PHP se sirve como texto.
+**Pages:** `https://galix-proyects.github.io/gate/GalixMovie/` es una pagina puente: los enlaces abren el tunel a pantalla completa (el iframe se quito porque Safari/Chrome bloquean cookies de terceros y el login no persistia); el admin no puede ejecutarse en Pages porque PHP se sirve como texto.
