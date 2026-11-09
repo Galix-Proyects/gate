@@ -3,92 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>GalixMovie — Puente</title>
+<title>GalixMovie</title>
 <meta name="theme-color" content="#020617">
 <link rel="icon" href="../logo.png">
 <style>
-  :root { --accent:#e11d48; --bg:#020617; --line:rgba(255,255,255,.10); --tx:#e2e8f0; --dim:#94a3b8; }
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 50% -10%, #1e293b 0%, var(--bg) 60%);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
-  .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
-  .card{width:100%;max-width:420px;background:rgba(15,23,42,.72);border:1px solid var(--line);border-radius:22px;padding:26px 22px;text-align:center;backdrop-filter:blur(10px);box-shadow:0 24px 60px rgba(0,0,0,.45)}
-  .logo{width:78px;height:78px;border-radius:20px;object-fit:cover;margin-bottom:14px;background:#111827}
-  h1{margin:0 0 4px;font-size:1.45rem;letter-spacing:-.02em}
-  .sub{margin:0 0 16px;color:var(--dim);font-size:.82rem}
-  .state{display:inline-flex;align-items:center;gap:7px;font-size:.75rem;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:999px;padding:5px 11px;margin-bottom:18px}
-  .dot{width:8px;height:8px;border-radius:50%;background:#f59e0b;box-shadow:0 0 10px currentColor}
-  .dot.on{background:#10b981}.dot.off{background:#ef4444}
-  .btn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:14px;margin-bottom:10px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--tx);font-size:.95rem;font-weight:600;text-decoration:none;transition:transform .12s,background .2s}
-  .btn:active{transform:scale(.98)}
-  .btn.primary{background:linear-gradient(135deg,#e11d48,#be123c);border-color:transparent;box-shadow:0 10px 24px rgba(225,29,72,.30)}
-  .btn.ghost{font-weight:500;font-size:.85rem;color:var(--dim);padding:11px}
-  .btn[aria-disabled="true"]{opacity:.45;pointer-events:none}
-  .note{margin:14px 0 0;color:#64748b;font-size:.72rem;line-height:1.5;text-align:left}
-  .note b{color:#94a3b8;font-weight:600}
+  html, body { margin:0; padding:0; height:100%; background:#020617; overflow:hidden; }
+  #app { display:block; width:100%; height:100%; border:0; background:#020617; }
+  .fab { position:fixed; right:14px; bottom:14px; z-index:20; display:flex; gap:8px; }
+  .fab a { display:inline-flex; align-items:center; gap:7px; padding:11px 15px; border-radius:999px;
+           background:rgba(15,23,42,.94); border:1px solid rgba(255,255,255,.14); color:#e2e8f0;
+           font:600 12.5px -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+           text-decoration:none; box-shadow:0 10px 28px rgba(0,0,0,.55); backdrop-filter:blur(8px); }
+  .fab a:active { transform:scale(.97); }
+  .fab a.play { background:linear-gradient(135deg,#e11d48,#be123c); border-color:transparent; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <img class="logo" src="../icons/GalixMovie.png" alt="GalixMovie" onerror="this.style.display='none'">
-    <h1>GalixMovie</h1>
-    <p class="sub">Acceso desde GitHub Pages</p>
+<iframe id="app" src="../01_PROYECTOS/GalixMovie/"
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+        allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
 
-    <div class="state"><span class="dot" id="dot"></span><span id="stateTxt">Detectando servidor…</span></div>
-
-    <a class="btn primary" id="catalog" href="#" aria-disabled="true">▶ Abrir catálogo</a>
-    <a class="btn" id="admin" href="#" aria-disabled="true">⚙️ Administración</a>
-    <a class="btn ghost" id="tailscale" href="http://100.102.226.89:8080/GalixMovie/">Red local / Tailscale</a>
-
-    <p class="note">
-      <b>GitHub Pages solo sirve esta página.</b> El catálogo, el login y el scrapper se ejecutan en la Box;
-      los botones abren el servidor en pantalla completa (misma sesión válida).
-    </p>
-  </div>
+<div class="fab">
+  <a class="play" href="http://100.102.226.89:8080/GalixMovie/">▶ Reproducir en la Box</a>
+  <a href="http://100.102.226.89:8080/GalixMovie/admin.html">⚙️ Admin</a>
 </div>
-<script>
-(function () {
-  var FALLBACK = 'http://100.102.226.89:8080';
-  var base = FALLBACK;
-  var dot = document.getElementById('dot');
-  var stateTxt = document.getElementById('stateTxt');
-  var catalog = document.getElementById('catalog');
-  var admin = document.getElementById('admin');
-
-  function paint(ok, txt) {
-    dot.className = 'dot ' + (ok ? 'on' : 'off');
-    stateTxt.textContent = txt;
-    catalog.setAttribute('aria-disabled', ok ? 'false' : 'true');
-    admin.setAttribute('aria-disabled', ok ? 'false' : 'true');
-    if (ok) {
-      catalog.href = base + '/GalixMovie/';
-      admin.href = base + '/GalixMovie/admin.html';
-    }
-  }
-
-  async function loadTunnel() {
-    try {
-      var res = await fetch('../tunnel.json?t=' + Date.now(), { cache: 'no-store' });
-      var j = await res.json();
-      if (j && j.url) base = String(j.url).replace(/\/+$/, '');
-    } catch (e) { /* usa fallback */ }
-  }
-
-  async function ping() {
-    try {
-      await fetch(base + '/GalixMovie/manifest.json?t=' + Date.now(), { mode: 'no-cors', cache: 'no-store' });
-      paint(true, 'Servidor en línea');
-    } catch (e) {
-      paint(false, 'Servidor no disponible');
-    }
-  }
-
-  (async function () {
-    await loadTunnel();
-    if (base === FALLBACK) paint(false, 'Túnel no publicado — usando Tailscale');
-    await ping();
-  })();
-})();
-</script>
 </body>
 </html>
