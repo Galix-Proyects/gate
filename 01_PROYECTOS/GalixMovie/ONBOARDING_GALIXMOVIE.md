@@ -149,3 +149,47 @@ Plataforma de streaming propia. **Target:** Todo dispositivo — Smart TV, Roku 
 - Admin: `admin.html`
 - **Prebuffer series** → Debounce 500ms con mouseleave cancel; localStorage último episodio; prebuffer al abrir modal
 - **Back series** → BACK durante playback返回modal de episodios, no catálogo
+
+## 10. Sesión 2026-11-08 — OFFLINE falso en Gestión de Biblioteca (DHARMA #74)
+
+**Síntoma:** decenas de títulos marcados OFFLINE (borde rojo + badge) con los archivos presentes en disco. Los badges S1 de contenido local salían en amarillo "HDD no disponible".
+
+**Causa raíz (3 capas):**
+1. `backend/check_status.php`: `realpath(__DIR__.'/../'.$url)` sobre rutas ABSOLUTAS de Termux → `false` → todo local "down".
+2. `backend/cleanup.php`: con un HDD desmontado, `scanMedia()` devuelve `[]` y `file_exists` falla en masa → marcaba `is_online=0` y **borraba historial** de todo el disco. Evidencia: HDD_500GB ausente 2026-11-01 10:15 → 2026-11-05 15:55.
+3. `backend/auditor.php`: cualquier path no-http se asumía online sin comprobar disco (ocultaba borrados reales).
+
+**Solución:**
+- `check_status.php`: `resolveLocalPath()` + `localDiskMounted()`; responde `DISK_UNMOUNTED` vs `LOCAL_FILE_MISSING` y devuelve `size`.
+- `cleanup.php` v2.0: omite discos no montados; aborta si el scan ve 0 archivos o si >10% del catálogo local "falta"; **no borra historial**; ejecución con auth + `confirm=1` (preview público).
+- `auditor.php`: `file_exists` real para locales; `gdrive:` y semillas siguen bypass.
+- `check_status.php` + `auditor.php`: DoH por IP directa (`CURLOPT_DOH_URL => https://1.1.1.1/dns-query`) — el resolver de Android (netd) estaba caído y producía "servidor caído" en todo remoto (DHARMA #76).
+- `admin-bundle.js` / `admin-extras.js`: la auditoría ya no omite la verificación de locales.
+- Nuevo `backend/verify_local.php`: reporte y reparación idempotente (CLI `--fix` / web `?fix=1`).
+
+**Resultado:** 353 archivos locales verificados, 0 faltantes; **134 títulos + 10 canales TV reactivados**. Estado: **415 online / 2 offline** (957 Nayarit 404, 977 Super Channel 12 sin stream).
+
+**Pendiente:** dedupe de `peliculas_metadata` (IDs 641 y 665; el UNIQUE `(contenido_id, season, episode)` no protege películas porque season/episode son NULL — DHARMA #75).
+
+## 11. Sesion 2026-11-09 — Scrapper: "Solo nuevos", espejos y episodios sin titulo (DHARMA #78)
+
+**Sintoma:** "Escanear" decia que casi todo estaba indexado (1.429 de 1.436) y solo mostraba 7 filas `no_match`; "No respires" seguia pendiente aunque su archivo estaba en la BD.
+
+**Causa raiz:**
+1. `admin-bundle.js` enviaba `skip_indexed=1` fijo: el checkbox **"Solo nuevos" no hacia nada**.
+2. `existingFilesMap` ignoraba los espejos `server2..server5` → una copia en mirror contaba como nueva.
+3. Episodios movidos a carpeta plana (`REVISION/T2x01.mp4`) quedaban **sin titulo** → TMDB con query vacia → `no_match` y la fila se ocultaba.
+4. `upsertContent` insertaba una fila por copia (el UNIQUE con NULL no protege peliculas, DHARMA #75).
+
+**Solucion:**
+- Checkbox → `skip_indexed` real; `admin.html` con `admin-bundle.js?v=20261109`.
+- Preview completo (`skip_indexed=0`) responde desde BD (`dbPathInfo`) sin gastar TMDB.
+- Espejos cuentan como ya indexados; filas sin titulo se muestran `no_match` con `existing_id`.
+- Apply: episodios buscan primero `tv`; titulo vacio → error claro pidiendo TMDB ID.
+- Copias adicionales → `server2..server5` en la MISMA fila (idempotente).
+- Nuevo `backend/repair_metadata.php` (CLI, dry-run / `--apply`): deduplica peliculas y re-vincula rutas movidas.
+- Modal de escaneo con grupos exhaustivos (`ya indexados`, `copias adicionales`, `listos para indexar`, `revisar`) para que nada quede invisible.
+
+**Resultado:** `skip_indexed=1` → 0 filas (todo indexado); `skip_indexed=0` → **1.452 filas `ok`** en ~32 s. Reparacion: 641/665 deduplicados, 3 filas borradas, 7 episodios South Park re-vinculados, **0 rutas faltantes de 1.450**. `verify_local.php`: 350 locales, 0 faltantes.
+
+**Pages:** `https://galix-proyects.github.io/gate/GalixMovie/` es un puente (iframe al tunel) y ya funciona; el admin no puede ejecutarse en Pages porque PHP se sirve como texto.

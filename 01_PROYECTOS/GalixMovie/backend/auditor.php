@@ -23,6 +23,25 @@ function isCFProtected($url, $bypassList) {
     return false;
 }
 
+/**
+ * DHARMA #74: los archivos locales se guardan como ruta ABSOLUTA de Termux.
+ * Antes se asumían "online" sin comprobar nada, ocultando borrados reales.
+ */
+function localExists($url) {
+    $candidates = [];
+    if (str_starts_with($url, '/')) {
+        $candidates[] = $url;
+    } else {
+        $candidates[] = __DIR__ . '/../' . $url;
+        $candidates[] = '/data/data/com.termux/files/home/' . $url;
+    }
+    foreach ($candidates as $cand) {
+        $real = realpath($cand);
+        if ($real && is_file($real) && is_readable($real)) return true;
+    }
+    return false;
+}
+
 // Verifica múltiples URLs en paralelo con cURL Multi
 function checkUrlsParallel(array $urls) {
     $results = [];
@@ -39,10 +58,12 @@ function checkUrlsParallel(array $urls) {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_TIMEOUT        => 4,
-            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_TIMEOUT        => 6,
+            CURLOPT_CONNECTTIMEOUT => 3,
             CURLOPT_NOBODY         => true,
             CURLOPT_USERAGENT      => "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            // DHARMA #76: DoH por IP directa — inmune a un resolver DNS caído
+            CURLOPT_DOH_URL        => 'https://1.1.1.1/dns-query',
         ]);
         curl_multi_add_handle($mh, $ch);
         $handles[$key] = $ch;
@@ -81,9 +102,25 @@ try {
         $anyOnline = false;
         $toCheck = [];
         foreach ($mirrors as $key => $url) {
+            if (!$url) continue;
+            // Semillas dinámicas: se resuelven en caliente al reproducir
+            if (str_starts_with($url, 'extract:') || str_starts_with($url, 'sniper:')) {
+                $anyOnline = true;
+                continue;
+            }
+            // GDrive: lo administra sync_gdrive_auto.php, no se puede sondear por HTTP
+            if (str_starts_with($url, 'gdrive:')) {
+                $anyOnline = true;
+                continue;
+            }
+            if (!preg_match('/^https?:\/\//i', $url)) {
+                // Archivo local: verificar existencia REAL en disco
+                if (localExists($url)) $anyOnline = true;
+                continue;
+            }
             if (isCFProtected($url, $CF_BYPASS_DOMAINS)) {
                 $anyOnline = true; // CF-protected = asumido online
-            } elseif ($url) {
+            } else {
                 $toCheck[$key] = $url;
             }
         }

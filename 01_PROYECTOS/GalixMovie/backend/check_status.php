@@ -16,15 +16,65 @@ if (!$url) {
 // limpiamos el prefijo para obtener la URL cruda del embed.
 $url = preg_replace('/^(extract:|sniper:)/', '', $url);
 
-// Si no es URL HTTP, es un path relativo local — verificar con file_exists().
+// Si no es URL HTTP, es un path local — verificar con file_exists().
+// DHARMA #74: los archivos del BUNKER se guardan como ruta ABSOLUTA de Termux
+// (/data/data/com.termux/files/home/BUNKER/...). Concatenar __DIR__.'/../' a una
+// ruta absoluta producía ".../GalixMovie/..//data/data/..." y marcaba TODO como caído.
 if (!preg_match('/^https?:\/\//i', $url)) {
-    $localPath = realpath(__DIR__ . '/../' . $url);
-    if ($localPath && strpos($localPath, realpath(__DIR__ . '/..')) === 0 && file_exists($localPath)) {
-        echo json_encode(['status' => 'online', 'http_code' => 200, 'note' => 'LOCAL_FILE_EXISTS']);
+    $localPath = resolveLocalPath($url);
+    if ($localPath) {
+        echo json_encode([
+            'status'    => 'online',
+            'http_code' => 200,
+            'note'      => 'LOCAL_FILE_EXISTS',
+            'size'      => filesize($localPath),
+        ]);
     } else {
-        echo json_encode(['status' => 'down', 'http_code' => 404, 'error' => 'Archivo local no encontrado']);
+        $diskMounted = localDiskMounted($url);
+        echo json_encode([
+            'status'       => 'down',
+            'http_code'    => 404,
+            'note'         => $diskMounted ? 'LOCAL_FILE_MISSING' : 'DISK_UNMOUNTED',
+            'disk_mounted' => $diskMounted,
+            'error'        => $diskMounted ? 'Archivo local no encontrado' : 'Disco no montado',
+        ]);
     }
     exit;
+}
+
+/**
+ * Resuelve una ruta local a un archivo existente y legible.
+ * Acepta rutas absolutas (Termux/BUNKER) y relativas al proyecto.
+ */
+function resolveLocalPath($url) {
+    $candidates = [];
+    if (str_starts_with($url, '/')) {
+        $candidates[] = $url;
+    } else {
+        $candidates[] = __DIR__ . '/../' . $url;
+        $candidates[] = '/data/data/com.termux/files/home/' . $url;
+    }
+    foreach ($candidates as $cand) {
+        $real = realpath($cand);
+        if ($real && is_file($real) && is_readable($real)) return $real;
+    }
+    return false;
+}
+
+/**
+ * ¿Sigue montado el disco que contiene esa ruta? (evita confundir "disco ausente" con "archivo borrado")
+ */
+function localDiskMounted($url) {
+    $path = str_starts_with($url, '/') ? $url : '/data/data/com.termux/files/home/' . $url;
+    if (!preg_match('#^(.*/BUNKER/[^/]+)#', $path, $m)) return true;
+    $mountPoint = $m[1];
+    $canonical = realpath($mountPoint);
+    $mounts = @file('/proc/mounts', FILE_IGNORE_NEW_LINES) ?: [];
+    foreach ($mounts as $line) {
+        $parts = preg_split('/\s+/', $line);
+        if (isset($parts[1]) && ($parts[1] === $mountPoint || ($canonical && $parts[1] === $canonical))) return true;
+    }
+    return false;
 }
 
 $host = parse_url($url, PHP_URL_HOST);
@@ -113,6 +163,9 @@ curl_setopt_array($ch, [
     CURLOPT_CONNECTTIMEOUT => 4,
     CURLOPT_USERAGENT      => "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     CURLOPT_HTTPHEADER     => ["Referer: $referer"],
+    // DHARMA #76: el resolver DNS de Android (netd) puede quedar inservible cuando
+    // el router no responde; el DoH por IP directa evita falsos "servidor caído".
+    CURLOPT_DOH_URL        => 'https://1.1.1.1/dns-query',
     CURLOPT_RANGE          => (strpos($host, 'medixiru') !== false || strpos($host, 'cloudwindow') !== false) ? null : "0-512" 
 ]);
 

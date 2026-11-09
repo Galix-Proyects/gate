@@ -1,17 +1,50 @@
 <?php
 /**
- * GalixMovie - Cleanup de Catálogo
+ * GalixMovie - Cleanup de Catálogo v2.0
  * ────────────────────────────────────────────────
  * Busca entries en DB cuyo archivo local ya no existe en disco
- * y las marca is_online = 0 + limpia historial (continue watching).
- * No requiere auth (público, solo lectura/limpieza).
+ * y las marca is_online = 0.
+ *
+ * DHARMA #74 — Blindaje contra discos desmontados:
+ *   v1 marcaba OFFLINE todo el disco si el HDD estaba desmontado
+ *   (scanMedia devolvía [] y file_exists fallaba en masa). Ahora:
+ *   - Guarda por disco: si el mount no está activo, se OMITE (no se toca).
+ *   - Guarda de ratio: si >10% de los títulos "faltan" en una corrida, aborta.
+ *   - Guarda de scan vacío: si el escaneo no ve archivos, aborta.
+ *   - NO borra historial (Continuar Viendo se conserva).
+ *   - Ejecución requiere sesión admin + confirm=1. Preview es público.
+ *
+ * Uso:
+ *   GET ?preview=1              -> análisis (no escribe)
+ *   GET ?confirm=1              -> ejecuta (requiere auth)
+ *   GET ?confirm=1&force=1      -> fuerza aunque salte el guarda de ratio (auth)
  */
 error_reporting(0);
-require 'db.php';
 header('Content-Type: application/json');
+
+$isPreview = isset($_GET['preview']) && $_GET['preview'] == '1';
+$isConfirm = isset($_GET['confirm']) && $_GET['confirm'] == '1';
+$isForce   = isset($_GET['force']) && $_GET['force'] == '1';
+
+// Preview: público (solo lectura). Ejecución: solo admin autenticado.
+if (!$isPreview) {
+    require 'auth.php';
+    checkAuth();
+    if (!$isConfirm) {
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'Falta confirm=1 para ejecutar la limpieza',
+        ]);
+        exit;
+    }
+}
+
+require 'db.php';
 
 $localBase = __DIR__ . '/..';
 define('MEDIA_DIR', '/data/data/com.termux/files/home/BUNKER');
+define('RATIO_GUARD', 0.10); // abandona si >10% del catálogo local "desaparece"
+define('MIN_ABSOLUTE_GUARD', 5);
 
 /**
  * Escaneo de archivos (misma lógica que scrapper.php)
@@ -32,8 +65,43 @@ function scanMedia(string $dir): array {
     return $results;
 }
 
+/**
+ * Devuelve true si el disco BUNKER que contiene $path está realmente montado.
+ * Evita confundir "disco ausente" con "archivos borrados".
+ */
+function diskMountedFor(string $path): bool {
+    if (!preg_match('#^(.*/BUNKER/[^/]+)#', $path, $m)) return true; // fuera de BUNKER: no aplica
+    $mountPoint = $m[1];
+    $canonical = realpath($mountPoint);
+    $mounts = @file('/proc/mounts', FILE_IGNORE_NEW_LINES) ?: [];
+    foreach ($mounts as $line) {
+        $parts = preg_split('/\s+/', $line);
+        if (!isset($parts[1])) continue;
+        if ($parts[1] === $mountPoint || ($canonical && $parts[1] === $canonical)) return true;
+    }
+    return false;
+}
+
+function abortar(string $motivo, array $extra = []): void {
+    echo json_encode(array_merge([
+        'status'       => 'aborted',
+        'message'      => $motivo,
+        'cleaned'      => 0,
+        'cleaned_list' => [],
+    ], $extra), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 try {
+    if (!is_dir(MEDIA_DIR)) {
+        abortar('BUNKER no accesible desde PHP; limpieza cancelada por seguridad');
+    }
+
     $diskFiles = scanMedia(MEDIA_DIR);
+    if (count($diskFiles) === 0) {
+        abortar('El escaneo no encontró archivos de video (¿discos desmontados?); limpieza cancelada');
+    }
+
     $diskNames = [];
     foreach ($diskFiles as $df) {
         $diskNames[$df['name']] = $df['path'];
@@ -52,12 +120,12 @@ try {
                            AND pm.archivo_path NOT LIKE 'gdrive:%'");
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $isPreview = isset($_GET['preview']) && $_GET['preview'] == '1';
-
     $cleaned     = 0;
     $renamed     = 0;
+    $unmounted   = 0;
     $errors      = [];
     $cleanedList = [];
+    $skippedList = [];
 
     foreach ($rows as $row) {
         $archivoPath = trim($row['archivo_path'] ?? '');
@@ -70,8 +138,15 @@ try {
         }
         $fullPath = realpath($fullPath) ?: $fullPath;
 
+        // 0. Guarda: si el disco no está montado, NO es un huérfano.
+        if (!diskMountedFor($fullPath)) {
+            $unmounted++;
+            $skippedList[] = ['id' => $row['id'], 'titulo' => $row['titulo'], 'motivo' => 'DISCO_NO_MONTADO'];
+            continue;
+        }
+
         // 1. Verificar si el archivo existe en su path original
-        if (file_exists($fullPath)) continue;
+        if (is_file($fullPath)) continue;
 
         // 2. Verificar si existe con el MISMO NOMBRE en scanMedia (renombrado/movido)
         $dbName = pathinfo($archivoPath, PATHINFO_FILENAME);
@@ -83,31 +158,41 @@ try {
         // 3. No existe en disco de ninguna forma
         $cleanedList[] = ['id' => $row['id'], 'titulo' => $row['titulo']];
         $cleaned++;
+    }
 
-        // Solo escribir en DB si NO es preview
-        if ($isPreview) continue;
+    // Guarda de ratio: una caída masiva casi siempre es un disco ausente, no 100 borrados reales.
+    $limite = max(MIN_ABSOLUTE_GUARD, (int)ceil(count($rows) * RATIO_GUARD));
+    if (!$isPreview && !$isForce && $cleaned > $limite) {
+        abortar(
+            "Guarda de seguridad: {$cleaned} de " . count($rows) . " archivos locales aparecen faltantes (límite {$limite}). " .
+            "Probable disco desmontado o ruta incorrecta. Usa force=1 si estás seguro.",
+            ['would_clean' => $cleaned, 'cleaned_list' => $cleanedList]
+        );
+    }
 
-        try {
-            // Limpiar continue watching
-            $delHist = $pdo->prepare("DELETE FROM historial WHERE contenido_id = ?");
-            $delHist->execute([$row['id']]);
-
-            // Marcar offline en catálogo público
-            $upd = $pdo->prepare("UPDATE contenido SET is_online = 0 WHERE id = ?");
-            $upd->execute([$row['id']]);
-        } catch (Exception $e) {
-            $errors[] = ['id' => $row['id'], 'titulo' => $row['titulo'], 'error' => $e->getMessage()];
+    // Solo escribir en DB si NO es preview
+    if (!$isPreview) {
+        foreach ($cleanedList as $item) {
+            try {
+                // Marcar offline en catálogo público (el historial se conserva)
+                $upd = $pdo->prepare("UPDATE contenido SET is_online = 0 WHERE id = ?");
+                $upd->execute([$item['id']]);
+            } catch (Exception $e) {
+                $errors[] = ['id' => $item['id'], 'titulo' => $item['titulo'], 'error' => $e->getMessage()];
+            }
         }
     }
 
     echo json_encode([
-        'status'        => 'success',
-        'preview'       => $isPreview,
-        'cleaned'       => $cleaned,
-        'cleaned_list'  => $cleanedList,
-        'renamed'       => $renamed,
-        'total_checked' => count($rows),
-        'errors'        => $errors,
+        'status'           => 'success',
+        'preview'          => $isPreview,
+        'cleaned'          => $cleaned,
+        'cleaned_list'     => $cleanedList,
+        'renamed'          => $renamed,
+        'skipped_unmounted'=> $unmounted,
+        'skipped_list'     => $skippedList,
+        'total_checked'    => count($rows),
+        'errors'           => $errors,
     ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {

@@ -48,6 +48,8 @@
 | P33 | Catálogo Roku (compat check series) | `components/MainScene.brs` | ✅ OK |
 | P34 | Resolución HLS GDrive (Roku + Web) | `components/MainScene.brs` + `js/app.js` (resolveGDriveUrl) | ✅ OK |
 | P35 | Skip list contextual (series vs películas) | `backend/scrapper.php` (orden detección) | ✅ OK |
+| P40 | Verificación real de archivos locales (BUNKER) | `backend/check_status.php` + `backend/verify_local.php` | ✅ OK |
+| P41 | Limpieza segura de catálogo (guardas disco/ratio + auth) | `backend/cleanup.php` | ✅ OK |
 
 ---
 
@@ -507,3 +509,10 @@ Los errores son el mapa de ruta hacia la invulnerabilidad del sistema. A partir 
 - **Solución Web:** stream.php (X-Accel-Redirect). AC3 se sirve directo sin transcodificar. El usuario convierte AC3→AAC manual con ffmpeg batch.
 - **Impacto:** Roku con DD+ reproduce AC3 sin pérdida. Web requiere conversión manual para escuchar AC3.
 - **Archivos:** js/app.js, backend/stream.php, backend/stream_ac3fix.php (inactivo)
+
+## P42: Escaneo del BUNKER — "Solo nuevos" real, espejos y episodios sin titulo
+- **Contexto:** "Escanear" reportaba casi todo como ya indexado y dejaba fuera archivos reales; "No respires" aparecia pendiente pese a estar en la BD.
+- **Causa Raiz:** `skip_indexed=1` hardcodeado en `admin-bundle.js` (checkbox ignorado), `existingFilesMap` sin espejos `server2..server5`, episodios con nombre plano (`T2x01.mp4`) sin titulo parseable, y `upsertContent` insertando una fila por copia.
+- **Solucion:** checkbox -> `skip_indexed` real; preview completo responde desde BD (`dbPathInfo`) sin TMDB; espejos cuentan como indexados; filas sin titulo se muestran `no_match` con `existing_id`; apply de episodios usa `tv` y exige TMDB ID si el titulo esta vacio; copias -> `server2..server5` en una sola fila; `backend/repair_metadata.php` deduplica y re-vincula rutas movidas.
+- **Impacto:** preview `skip_indexed=0` -> 1.452 filas `ok` en ~32 s; `skip_indexed=1` -> 0 filas cuando todo esta indexado; 0 rutas faltantes de 1.450; apply idempotente (pelicula y episodio).
+- **Archivos:** backend/scrapper.php, backend/repair_metadata.php (nuevo), admin-bundle.js, admin.html

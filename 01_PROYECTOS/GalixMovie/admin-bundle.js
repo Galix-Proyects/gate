@@ -59,6 +59,16 @@ ${r.status === 'no_match' ? `<button onclick="ignoreFile('${escHtml(r.file).repl
 </div>`;
 }
 
+function tmdbRowCompact(r) {
+const idTxt = r.tmdb_id ? ' · ID ' + r.tmdb_id : '';
+const tipoTxt = r.is_episode ? 'episodio' : (r.tipo || '');
+return `<label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;">
+<input type="checkbox" class="scan-approve" data-index="${r.index}" style="width:15px;height:15px;accent-color:#10b981;flex:0 0 auto;">
+<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.78rem;color:#cbd5e1;">${escHtml(r.file)}<span style="color:#64748b;">${idTxt}</span></span>
+<span style="color:#475569;font-size:0.65rem;flex:0 0 auto;">${escHtml(tipoTxt)}</span>
+</label>`;
+}
+
 async function ignoreFile(fileName, btn) {
 btn.disabled = true;
 btn.textContent = '⏳';
@@ -124,9 +134,12 @@ async function runScan() {
   progressMsg.textContent = 'Iniciando...';
 
   try {
+    // DHARMA #78: el checkbox "Solo nuevos" ahora sí se respeta.
+    const onlyNewBox = document.getElementById('scanModeNew');
+    const skipIndexed = (!onlyNewBox || onlyNewBox.checked) ? 1 : 0;
     const data = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', 'backend/scrapper.php?action=preview&skip_indexed=1');
+      xhr.open('GET', 'backend/scrapper.php?action=preview&skip_indexed=' + skipIndexed);
 
       let timedOut = false;
       const timeoutId = setTimeout(() => { timedOut = true; xhr.abort(); }, 600000);
@@ -212,7 +225,18 @@ async function runScan() {
 
     const results = data.results;
     if (!results || results.length === 0) {
-      await Swal.fire({ icon: 'info', title: 'Sin archivos', text: 'No se encontraron archivos en el directorio.', background: '#1e293b', color: '#fff', confirmButtonColor: '#10b981' });
+      const allIndexed = skipIndexed === 1;
+      await Swal.fire({
+        icon: 'success',
+        title: allIndexed ? 'Todo está indexado ✅' : 'Sin archivos',
+        text: allIndexed
+          ? 'No hay archivos nuevos en el BUNKER. Desmarca "Solo nuevos" para revisar los ya indexados.'
+          : 'No se encontraron archivos de video en el directorio.',
+        background: '#1e293b', color: '#fff', confirmButtonColor: '#10b981'
+      });
+      consoleBox.innerHTML += allIndexed
+        ? '> ✅ Sin archivos nuevos — todo indexado<br>'
+        : '> ⚠️ No se encontraron archivos<br>';
       return;
     }
 
@@ -220,14 +244,20 @@ async function runScan() {
     consoleBox.scrollTop = consoleBox.scrollHeight;
 
     // ── GROUP RESULTS ───────────────────────────────────────────
-    const okIndexed = results.filter(r => r.status === 'ok' && !r.has_changed && r.already_indexed && r.confidence);
-    const changed = results.filter(r => r.status === 'ok' && r.has_changed && !r.is_episode);
-    const newEpisodes = results.filter(r => r.status === 'ok' && r.is_episode && !r.already_indexed && r.confidence);
-    const orphaned = results.filter(r => r.status === 'orphaned_rename');
-    const needsReview = results.filter(r => r.status === 'no_match' || (!r.confidence && r.status === 'ok' && !r.has_changed && !r.already_indexed));
-    const skipped = results.filter(r => r.status === 'skipped');
+    // DHARMA #78: agrupación exhaustiva — ninguna fila puede quedar invisible.
+    const used = new Set();
+    const take = (arr) => { arr.forEach(r => used.add(r)); return arr; };
 
-    const hasActions = changed.length > 0 || newEpisodes.length > 0 || orphaned.length > 0 || needsReview.length > 0;
+    const okIndexed  = take(results.filter(r => r.already_indexed));
+    const changed    = take(results.filter(r => !r.already_indexed && r.status === 'ok' && r.has_changed && !r.is_episode));
+    const newEpisodes= take(results.filter(r => !r.already_indexed && r.status === 'ok' && r.is_episode && r.confidence));
+    const orphaned   = take(results.filter(r => r.status === 'orphaned_rename'));
+    const needsReview= take(results.filter(r => !r.already_indexed && (r.status === 'no_match' || (r.status === 'ok' && !r.confidence && !r.has_changed))));
+    const copies     = take(results.filter(r => !r.already_indexed && (r.existing_id > 0) && r.status === 'ok'));
+    const pending    = results.filter(r => r.status === 'ok' && !used.has(r));
+    const skipped    = take(results.filter(r => r.status === 'skipped'));
+
+    const hasActions = (changed.length + newEpisodes.length + orphaned.length + needsReview.length + copies.length + pending.length) > 0;
 
     // ── BUILD MODAL HTML ────────────────────────────────────────
     let html = `<div style="text-align:left;max-height:65vh;overflow-y:auto;">`;
@@ -237,11 +267,25 @@ async function runScan() {
     </div>`;
 
     if (okIndexed.length > 0) {
+      const MAX_RENDER = 400;
       html += `<details style="margin-bottom:10px;">
-        <summary style="cursor:pointer;color:#10b981;font-weight:600;font-size:0.95rem;padding:4px 0;">✅ Ya indexados (${okIndexed.length})</summary>
+        <summary style="cursor:pointer;color:#10b981;font-weight:600;font-size:0.95rem;padding:4px 0;">✅ Ya indexados (${okIndexed.length}) — marca para re-indexar</summary>
         <div style="margin-top:6px;">`;
-      okIndexed.forEach(r => { html += tmdbRow(r, false); });
+      okIndexed.slice(0, MAX_RENDER).forEach(r => { html += tmdbRowCompact(r); });
+      if (okIndexed.length > MAX_RENDER) {
+        html += `<div style="color:#64748b;font-size:0.75rem;padding:6px;">… y ${okIndexed.length - MAX_RENDER} más (usa "Solo nuevos" para ocultarlos)</div>`;
+      }
       html += `</div></details>`;
+    }
+
+    if (copies.length > 0) {
+      html += `<h3 style="color:#2dd4bf;margin:10px 0 8px;font-size:0.95rem;">📀 Copias adicionales del mismo título (${copies.length})</h3>`;
+      copies.forEach(r => { html += tmdbRow(r, true, '#0f766e'); });
+    }
+
+    if (pending.length > 0) {
+      html += `<h3 style="color:#38bdf8;margin:10px 0 8px;font-size:0.95rem;">🆕 Listos para indexar (${pending.length})</h3>`;
+      pending.forEach(r => { html += tmdbRow(r, true); });
     }
 
     if (changed.length > 0) {
@@ -280,7 +324,7 @@ async function runScan() {
       title: `📋 Escaneo — ${results.length} archivos${noPending && !hasActions ? ' ✅ Todo en orden' : ''}`,
       html,
       showCancelButton: true,
-      confirmButtonText: hasActions ? '✅ Aplicar Seleccionados' : '✅ Aplicar (forzar re-index)',
+      confirmButtonText: '✅ Aplicar Seleccionados',
       cancelButtonText: 'Cancelar',
       background: '#1e293b',
       color: '#fff',
@@ -1397,9 +1441,10 @@ async function runAuditor() {
                     
                     mirrorsChecked++;
                     const isSeed = url.startsWith('extract:') || url.startsWith('sniper:');
-                    const isLocal = !url.startsWith('http') && !isSeed && !url.startsWith('backend/');
                     
-                    if (isLocal || isSeed) {
+                    // DHARMA #74: los archivos locales YA se verifican (check_status.php
+                    // resuelve rutas absolutas del BUNKER). Solo las semillas se asumen online.
+                    if (isSeed) {
                         anyOnline = true;
                         continue;
                     }

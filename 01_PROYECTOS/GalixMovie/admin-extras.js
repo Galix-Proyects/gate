@@ -136,10 +136,10 @@
                     const colName = td.id.split('-')[0]; // s1, s2, s3...
                     // 🛡️ MEJORA 1: extract: y sniper: son semillas de extracción en caliente — asumir online
                     const isSeed = url.startsWith('extract:') || url.startsWith('sniper:');
-                    const isLocal = !url.startsWith('http') && !isSeed && !url.startsWith('backend/');
                     
-                    if (isLocal || isSeed) {
-                        console.log(`  ✅ Mirror Especial (${isSeed ? 'Semilla' : 'Local'}): ${url}`);
+                    // DHARMA #74: los archivos locales se verifican de verdad (check_status.php)
+                    if (isSeed) {
+                        console.log(`  ✅ Semilla en caliente: ${url}`);
                         anyOnline = true;
                         continue; // No hacemos break para poder revisar los demás servidores de la fila
                     }

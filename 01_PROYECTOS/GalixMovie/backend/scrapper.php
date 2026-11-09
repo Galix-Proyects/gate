@@ -762,15 +762,44 @@ function upsertContent(PDO $pdo, array $tmdbData, string $tipo, string $filePath
         }
     } else {
         // Película normal → peliculas_metadata
-        $existingMeta = $pdo->prepare("SELECT id FROM peliculas_metadata WHERE contenido_id = ? AND season IS NULL");
-        $existingMeta->execute([$contenido_id]);
-        $metaId = $existingMeta->fetchColumn();
-        if ($metaId) {
-            $pdo->prepare("UPDATE peliculas_metadata SET archivo_path=?, subtitulos_path=?, file_size=? WHERE id=?")
-                ->execute([$filePath, $subPath, $fileSize, $metaId]);
-        } else {
+        // DHARMA #78: las copias adicionales del mismo título se guardan como
+        // espejos (server2..server5) en UNA fila, sin duplicar registros.
+        $mirrorCols = ['server2', 'server3', 'server4', 'server5'];
+        $stmtAll = $pdo->prepare("SELECT * FROM peliculas_metadata WHERE contenido_id = ? AND season IS NULL ORDER BY id");
+        $stmtAll->execute([$contenido_id]);
+        $rowsPm = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
+
+        $already = null;
+        foreach ($rowsPm as $r) {
+            if (trim((string)($r['archivo_path'] ?? '')) === $filePath) { $already = $r; break; }
+            foreach ($mirrorCols as $mc) {
+                if (trim((string)($r[$mc] ?? '')) === $filePath) { $already = $r; break 2; }
+            }
+        }
+
+        if ($already) {
+            // La copia ya está registrada: solo refrescar subtítulos/tamaño.
+            $pdo->prepare("UPDATE peliculas_metadata SET subtitulos_path = COALESCE(?, subtitulos_path), file_size = IF(? > 0, ?, file_size) WHERE id = ?")
+                ->execute([$subPath, $fileSize, $fileSize, $already['id']]);
+        } elseif (!$rowsPm) {
             $pdo->prepare("INSERT INTO peliculas_metadata (contenido_id, archivo_path, subtitulos_path, season, episode, file_size) VALUES (?,?,?,?,?,?)")
                 ->execute([$contenido_id, $filePath, $subPath, null, null, $fileSize]);
+        } else {
+            $main = $rowsPm[0];
+            if (trim((string)($main['archivo_path'] ?? '')) === '') {
+                $pdo->prepare("UPDATE peliculas_metadata SET archivo_path=?, subtitulos_path=?, file_size=? WHERE id=?")
+                    ->execute([$filePath, $subPath, $fileSize, $main['id']]);
+            } else {
+                $free = null;
+                foreach ($mirrorCols as $mc) {
+                    if (trim((string)($main[$mc] ?? '')) === '') { $free = $mc; break; }
+                }
+                if ($free === null) $free = 'server5'; // espejos llenos: se reemplaza el último
+                $pdo->prepare("UPDATE peliculas_metadata SET `$free` = ? WHERE id = ?")
+                    ->execute([$filePath, $main['id']]);
+                global $log;
+                $log[] = "    [ESPEJO 🔗] Copia adicional guardada en $free";
+            }
         }
     }
     return $contenido_id;
@@ -856,11 +885,14 @@ function runApply(PDO $pdo, array $approved, array $customTmdb = [], array $cust
         }
 
         if (isset($customTmdb[$i]) && $customTmdb[$i] > 0) {
-            $result = tmdbSearchById($customTmdb[$i], 'movie');
-            $tipo = 'movie';
+            // DHARMA #78: si es episodio, el TMDB ID corresponde a la SERIE.
+            $primary   = $isEpisode ? 'tv' : 'movie';
+            $secondary = $isEpisode ? 'movie' : 'tv';
+            $result = tmdbSearchById($customTmdb[$i], $primary);
+            $tipo   = ($primary === 'tv') ? 'series' : 'movie';
             if (!$result) {
-                $result = tmdbSearchById($customTmdb[$i], 'tv');
-                if ($result) $tipo = 'series';
+                $result = tmdbSearchById($customTmdb[$i], $secondary);
+                if ($result) $tipo = ($secondary === 'tv') ? 'series' : 'movie';
             }
             if (!$result) {
                 $errors[] = ['index' => $i, 'file' => $video['name'], 'message' => 'TMDB ID inválido: ' . $customTmdb[$i]];
@@ -868,6 +900,13 @@ function runApply(PDO $pdo, array $approved, array $customTmdb = [], array $cust
             }
             $confident = true;
         } else {
+            // DHARMA #78: sin título reconocible (ej. "T2x17.mp4") no se puede
+            // buscar; se pide un TMDB ID manual en vez de inventar un match.
+            if (trim($parsed['title']) === '' || ($isEpisode && trim((string)$parsed['title']) === '')) {
+                $errors[] = ['index' => $i, 'file' => $video['name'], 'message' => 'Nombre sin título reconocible — indica un TMDB ID (serie para episodios)'];
+                continue;
+            }
+
             // Si es episodio, buscar como serie directamente
             if ($isEpisode) {
                 $result = tmdbSearch($parsed['title'], $parsed['year'], 'tv');
@@ -983,10 +1022,54 @@ if ($isWeb) {
             ob_flush();
             flush();
 
-            $stmt = $pdo->query("SELECT archivo_path FROM peliculas_metadata WHERE archivo_path IS NOT NULL");
-            $existingFiles = $stmt->fetchAll(PDO::FETCH_COLUMN);
-            $stmt2 = $pdo->query("SELECT archivo_path FROM series_metadata WHERE archivo_path IS NOT NULL");
-            $existingFiles = array_merge($existingFiles, $stmt2->fetchAll(PDO::FETCH_COLUMN));
+            // Incluye espejos (server2..5): una copia registrada como mirror
+            // también cuenta como "ya indexada" (DHARMA #78).
+            $existingFiles = [];
+            $dbPathInfo = [];
+            foreach ([
+                'SELECT archivo_path, server2, server3, server4, server5 FROM peliculas_metadata',
+                'SELECT archivo_path, server2, server3, server4, server5 FROM series_metadata',
+            ] as $sqlPaths) {
+                foreach ($pdo->query($sqlPaths) as $prow) {
+                    foreach (['archivo_path', 'server2', 'server3', 'server4', 'server5'] as $col) {
+                        $pval = trim((string)($prow[$col] ?? ''));
+                        if ($pval === '') continue;
+                        $existingFiles[] = $pval;
+                    }
+                }
+            }
+
+            // DHARMA #78: al escanear con "Solo nuevos" desactivado, los archivos ya
+            // indexados se muestran con sus datos de BD, sin gastar llamadas a TMDB.
+            $dbInfoStmt = $pdo->query("
+                SELECT pm.archivo_path AS path, c.id, c.titulo, c.tmdb_id, c.tipo
+                  FROM peliculas_metadata pm JOIN contenido c ON c.id = pm.contenido_id
+                 WHERE pm.archivo_path IS NOT NULL AND pm.archivo_path != ''
+                UNION ALL
+                SELECT sm.archivo_path AS path, c.id, c.titulo, c.tmdb_id, c.tipo
+                  FROM series_metadata sm JOIN contenido c ON c.id = sm.contenido_id
+                 WHERE sm.archivo_path IS NOT NULL AND sm.archivo_path != ''
+            ");
+            if ($dbInfoStmt) {
+                foreach ($dbInfoStmt as $dbi) {
+                    $dbPathInfo[$dbi['path']] = $dbi;
+                }
+            }
+            // Espejos: misma info que su fila principal
+            foreach (['peliculas_metadata', 'series_metadata'] as $mtbl) {
+                $mStmt = $pdo->query("
+                    SELECT m.server2, m.server3, m.server4, m.server5, c.id, c.titulo, c.tmdb_id, c.tipo
+                      FROM `$mtbl` m JOIN contenido c ON c.id = m.contenido_id
+                ");
+                if (!$mStmt) continue;
+                foreach ($mStmt as $m) {
+                    foreach (['server2', 'server3', 'server4', 'server5'] as $mc) {
+                        $mp = trim((string)($m[$mc] ?? ''));
+                        if ($mp === '') continue;
+                        $dbPathInfo[$mp] = ['path' => $mp, 'id' => $m['id'], 'titulo' => $m['titulo'], 'tmdb_id' => $m['tmdb_id'], 'tipo' => $m['tipo']];
+                    }
+                }
+            }
             $existingFilesMap = array_flip($existingFiles);
 
             echo json_encode(['type' => 'progress', 'current' => 0, 'total' => $total, 'file' => '', 'msg' => 'Consultando base de datos...']) . "\n";
@@ -1046,6 +1129,38 @@ if ($isWeb) {
                 continue;
             }
 
+            // MODO COMPLETO ("Solo nuevos" desactivado): usar los datos que ya están
+            // en BD para este archivo, sin consultar TMDB (preview rápido).
+            if ($isAlreadyIndexed) {
+                $dbi = $dbPathInfo[$video['path']] ?? [];
+                $parsedDb = parseFileName($video['name']);
+                $seriesDb = detectSeriesFromPath($video['path']);
+                $isEpDb = (bool)$parsedDb['is_episode'] || $seriesDb !== null;
+                $results[] = [
+                    'index'           => $i,
+                    'file'            => $video['name'],
+                    'path'            => $video['path'],
+                    'current_title'   => $dbi['titulo'] ?? $video['name'],
+                    'current_year'    => 0,
+                    'tmdb_title'      => $dbi['titulo'] ?? $video['name'],
+                    'tmdb_id'         => (int)($dbi['tmdb_id'] ?? 0),
+                    'tmdb_year'       => 0,
+                    'confidence'      => true,
+                    'tipo'            => $dbi['tipo'] ?? 'movie',
+                    'status'          => 'ok',
+                    'already_indexed' => true,
+                    'existing_id'     => (int)($dbi['id'] ?? 0),
+                    'proposed_name'   => $video['name'],
+                    'has_changed'     => false,
+                    'safety_msg'      => null,
+                    'is_episode'      => $isEpDb,
+                    'episode_info'    => $isEpDb ? sprintf('S%02dE%02d', $parsedDb['season'], $parsedDb['episode']) : null,
+                ];
+                echo json_encode(['type' => 'progress', 'current' => $i+1, 'total' => count($videos), 'file' => $video['name'], 'msg' => 'OK (ya indexado)']) . "\n";
+                ob_flush(); flush();
+                continue;
+            }
+
             if ($seriesPath) {
                 $parsed = parseFileName($video['name']);
                 $parsed['title']      = $seriesPath['series'];
@@ -1059,8 +1174,19 @@ if ($isWeb) {
             $searchYear  = $parsed['year'];
             $isEpisode   = $parsed['is_episode'];
 
+            // DHARMA #78: "T2x17.mp4" en carpeta plana deja el título vacío (el
+            // parser elimina el código). Sin título se muestra como "Sin match"
+            // para poder indexarlo a mano con un TMDB ID, en vez de desaparecer.
+            $bareEpisodeCode = ($isEpisode && trim($searchQuery) === '');
+            if ($bareEpisodeCode) {
+                $searchQuery = $video['name'];
+            }
+
             // Si es episodio, buscar como serie directamente
-            if ($isEpisode) {
+            if ($bareEpisodeCode) {
+                $result = null;
+                $tipo = 'series';
+            } elseif ($isEpisode) {
                 $result = tmdbSearch($searchQuery, $searchYear, 'tv');
                 $tipo = 'series';
             } else {
@@ -1131,6 +1257,7 @@ if ($isWeb) {
                 'tipo'            => $ec ? ($ec['tipo'] ?: $tipo) : $tipo,
                 'status'          => $orphanedMatch ? 'orphaned_rename' : (($result || $ec) ? 'ok' : 'no_match'),
                 'already_indexed' => $isAlreadyIndexed,
+                'existing_id'     => $ec ? (int)$ec['id'] : 0,
                 'proposed_name'   => $ec ? $video['name'] : $proposedName,
                 'has_changed'     => $ec ? false : (($proposedName !== $video['name']) || (bool)$orphanedMatch),
                 'safety_msg'      => $orphanedMatch ? "🔄 Renombre manual — se actualizarán metadatos de contenido existente (ID: $orphanedMatch)" : $safetyMsg,

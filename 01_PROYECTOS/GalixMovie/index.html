@@ -1105,13 +1105,16 @@
                 if (prevData.renamed > 0) {
                     listHtml += `<div style="font-size:0.78rem;color:#64748b;margin-top:6px;">🔄 ${prevData.renamed} archivos renombrados intactos (no se eliminan)</div>`;
                 }
+                if (prevData.skipped_unmounted > 0) {
+                    listHtml += `<div style="font-size:0.78rem;color:#fbbf24;margin-top:6px;">⚠️ ${prevData.skipped_unmounted} títulos omitidos: su disco no está montado (no se tocan)</div>`;
+                }
 
                 const confirm = await Swal.fire({
-                    title: `Se eliminarán ${prevData.cleaned} archivos`,
+                    title: `Se retirarán ${prevData.cleaned} títulos de cartelera`,
                     html: listHtml,
                     icon: 'warning',
                     showCancelButton: true,
-                    confirmButtonText: '✅ Sí, eliminar',
+                    confirmButtonText: '✅ Sí, retirar',
                     cancelButtonText: 'Cancelar',
                     confirmButtonColor: '#ef4444',
                     background: '#0f172a',
@@ -1120,24 +1123,31 @@
                 });
                 if (!confirm.isConfirmed) return;
 
-                // ── 3. EJECUTAR ──────────────────────────────────────
+                // ── 3. EJECUTAR (requiere sesión admin) ──────────────
                 Swal.fire({
-                    title: 'Eliminando...',
+                    title: 'Procesando...',
                     allowOutsideClick: false,
                     background: '#0f172a',
                     didOpen: () => Swal.showLoading()
                 });
 
-                const res = await fetch('backend/cleanup.php?v=' + Date.now());
+                const res = await fetch('backend/cleanup.php?confirm=1&v=' + Date.now());
                 const data = await res.json();
 
-                if (data.status !== 'success') {
-                    Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Error al limpiar', background: '#0f172a', color: '#fff' });
+                if (data.status === 'aborted') {
+                    Swal.fire({ icon: 'warning', title: 'Limpieza cancelada', text: data.message || 'Guarda de seguridad activada', background: '#0f172a', color: '#fff' });
+                    return;
+                }
+                if (data.status === 'error') {
+                    const txt = (data.message === 'Unauthorized access')
+                        ? 'Inicia sesión para modificar el catálogo.'
+                        : (data.message || 'Error al limpiar');
+                    Swal.fire({ icon: 'error', title: 'Error', text: txt, background: '#0f172a', color: '#fff' });
                     return;
                 }
 
                 let msg = '';
-                if (data.cleaned > 0) msg += `🎯 <strong>${data.cleaned}</strong> películas eliminadas del catálogo.<br>`;
+                if (data.cleaned > 0) msg += `🎯 <strong>${data.cleaned}</strong> títulos retirados de cartelera.<br>`;
                 if (data.renamed > 0) msg += `🔄 <strong>${data.renamed}</strong> archivos renombrados intactos.<br>`;
                 if (data.cleaned === 0 && data.renamed === 0) msg = '✅ Todo en orden. No se encontraron archivos huérfanos.';
 
