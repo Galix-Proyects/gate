@@ -25,3 +25,17 @@ logs/
 **/init_gate.sh
 **/telegram_bot.py
 **/telegram_wrapper.sh
+
+# Seguridad Pages (2026-11-09): el repo público solo publica el catálogo y la
+# página puente. El backend, el admin y la documentación viven solo en la Box.
+01_PROYECTOS/*/backend/
+01_PROYECTOS/*/telegram_daemon/
+01_PROYECTOS/*/admin.html
+01_PROYECTOS/*/admin-*.js
+01_PROYECTOS/*/*.md
+01_PROYECTOS/*/Instru_*.txt
+01_PROYECTOS/*/*.php
+01_PROYECTOS/*/*.py
+01_PROYECTOS/*/*.sh
+01_PROYECTOS/*/*.sql
+01_PROYECTOS/*/*.m3u
